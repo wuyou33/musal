@@ -1,0 +1,190 @@
+//
+//  main.cpp
+//  MusAL
+//
+//  Created by Jean on 3/11/15.
+//  Copyright (c) 2015 Jean. All rights reserved.
+//
+#include <iostream>
+#include <iomanip>
+#include <string.h>
+#include <math.h>
+#include <time.h>
+
+#include "userData.h"
+#include "MyDynamics.h"
+#include "MyTrackCost.h"
+#include "MyPathConstraint.h"
+#include "MyMayer.h"
+#include "Simulator.h"
+#include "SolverOptions.h"
+#include "ExplicitButcherTabs.h"
+
+
+int main(int argc, const char * argv[])
+{
+    int i,lsim,Ns_,s_nsteps,m_nsteps;
+    double ts,tpred;
+    ExplicitButcherTabs butch;
+    const char* saveFileStates;
+    const char* saveFileInputs;
+    const char* saveFileTimes;
+    const char* saveFileDimensions; 
+    const char* saveFileKKT;
+    const char* saveFileFeas;
+    const char* saveFileSolveTime;
+    const char* saveFileCG;
+    clock_t str,end;
+
+    /* Inverted pendulum */
+    Ns_ = 20;
+    ts = 0.05;
+    tpred = 1.; 
+    lsim = 2;
+
+    s_nsteps = 10;    
+    m_nsteps = 1;
+
+    saveFileStates = "pendulumStates.txt";
+    saveFileInputs = "pendulumInputs.txt";
+    saveFileTimes = "pendulumInstants.txt";
+    saveFileDimensions = "pendulumDimensions.txt";
+    saveFileKKT = "pendulumKKT.txt";
+    saveFileFeas = "pendulumFeas.txt";
+    saveFileSolveTime = "pendulumSolveTime.txt";
+    saveFileCG = "pendulumCG.txt";
+
+
+    /* Crane  */
+/*    ts = 0.3; 
+    tsim = ts;
+    tpred = 3.;
+
+    s_hfix = ts/10.;    
+    m_hfix = ts/6.; */
+
+    /* DC motor */
+/*    ts = 0.01;
+    tsim = ts;
+    tpred = 0.2;
+
+    double s_hfix = ts/10.;
+    double m_hfix = ts; */
+    /* Unicycle */
+/*    ts = 0.05;
+    tsim = ts;
+    tpred = 2.;
+    double s_hfix = ts/10.;
+    double m_hfix = ts/1.; */
+
+    /** 
+    * Set simulator
+    */
+    Simulator<MyDynamics,MyTrackCost,MyPathConstraint,MyMayer> sim;
+    SolverOptions opts;
+        
+    /* State bounds */
+    double xmin[DX];
+    xmin[0] = MIN_X_ONE; // For inverted pendulum
+//    xmin[0] = NEGINF; // For crane
+    xmin[1] = NEGINF;
+    xmin[2] = NEGINF; //-1.;
+    xmin[3] = NEGINF; //-1.;
+//    xmin[4] = NEGINF;
+//    xmin[0] = MIN_X_ONE; // DC motor
+//    xmin[1] = MIN_X_TWO;
+//    xmin[0] = MIN_X_ONE; // Unicycle
+//    xmin[1] = MIN_X_TWO;
+//    xmin[2] = MIN_X_THREE;
+    double xmax[DX];
+    xmax[0] = MAX_X_ONE; // For inverted pendulum
+//    xmax[0] = POSINF; // For crane
+    xmax[1] = POSINF;
+    xmax[2] = POSINF; //1.
+    xmax[3] = POSINF; //1.
+//    xmax[4] = POSINF;
+//    xmax[0] = MAX_X_ONE; // DC motor
+//    xmax[1] = MAX_X_TWO;
+//    xmax[0] = MAX_X_ONE; // Unicycle
+//    xmax[1] = MAX_X_TWO;
+//    xmax[2] = MAX_X_THREE;
+    sim.setStateBounds(xmin,xmax);
+
+    for (i=0;i<DX;++i)   
+        std::cout<<"xmin="<<xmin[i]<<", xmax="<<xmax[i]<<std::endl;
+
+    /* Input bounds */
+    double umin[DU];
+    umin[0] = MIN_U_ONE;
+//    umin[1] = MIN_U_TWO; // Unicycle
+    double umax[DU];
+    umax[0] = MAX_U_ONE;
+//    umax[1] = MAX_U_TWO;
+    sim.setInputBounds(umin,umax);
+
+    for (i=0;i<DU;++i)   
+        std::cout<<"umin="<<umin[i]<<", umax="<<umax[i]<<std::endl;
+
+    sim.setSimulationLength(lsim);
+    sim.setPredictionTime(tpred);
+    sim.setSamplingPeriod(ts);
+    sim.setNumShootingNodes(Ns_+1);
+    
+    sim.setNumIntStepShooting(m_nsteps);
+    sim.setButcherShooting(butch.gets_erk_4(),
+                           butch.getA_erk_4(),
+                           butch.getb_erk_4(),
+                           butch.getc_erk_4());
+//    sim.setButcherShooting(butch.gets_erk_trap(),butch.getA_erk_trap(),butch.getb_erk_trap(),butch.getc_erk_trap());
+//    sim.setButcherShooting(butch.gets_erk_rung(),butch.getA_erk_rung(),butch.getb_erk_rung(),butch.getc_erk_rung());
+
+    sim.setNumIntStepSimulation(s_nsteps);
+    sim.setButcherSimulation(butch.gets_erk_4(),
+                             butch.getA_erk_4(),
+                             butch.getb_erk_4(),
+                             butch.getc_erk_4());
+    
+    /* Set options for augmented Lagrangian solver */
+    opts.setMaxPrimalIters(2000);
+    opts.setBacktrackMaxIter(50);
+    opts.setMaxDualIters(100);
+    opts.setBacktrackCoef(0.5);
+    opts.setBacktrackConst(0.0001);
+    opts.setBetaInter(0.1);
+    opts.setBetaExtra(5.);
+    opts.setInitialPenalty(100.);
+    opts.setPenaltyMulCoef(5.);
+    opts.setBandWidth(8);
+    opts.setPivotTolerance(1E-6);
+//    opts.setEcTolIni(1.E-5);
+//    opts.setKktTolIni(1.E-5);
+    sim.setSolverOptions(opts);
+
+    sim.init();
+
+    /* Set initial state */
+    double xini[DX];
+    memset(xini,0,DX*SZDBL);
+    xini[2] = 0;
+    //xini[0] = 0.8; // Unicycle
+    //xini[1] = -0.2;
+    //xini[2] = 3.*M_PI/4.;
+    sim.setInitialState(xini);
+
+    /* Run */
+    sim.run();
+
+    /* Save */
+    sim.saveDimensions(saveFileDimensions);
+    sim.saveTimes(saveFileTimes);
+    sim.saveInputs(saveFileInputs);
+    sim.saveStates(saveFileStates);
+    sim.saveKKT(saveFileKKT);
+    sim.saveFeas(saveFileFeas);
+    sim.saveSolveTime(saveFileSolveTime);
+    sim.saveCG(saveFileCG);
+
+    return 0;
+}
+
+

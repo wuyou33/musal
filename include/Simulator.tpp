@@ -1,0 +1,882 @@
+//
+//  Simulator.cpp
+//  MusAL
+//
+//  Created by Jean on 4/9/15.
+//  Copyright (c) 2015 Jean. All rights reserved.
+//
+#include <math.h>
+#include <assert.h>
+#include <algorithm>
+#include <iostream>
+#include <fstream>
+#include <time.h>
+
+#include "Simulator.h"
+
+/**
+** Default constructor
+**/
+template <class dynT,class costT,class pconT,class mayerT> Simulator<dynT,costT,pconT,mayerT>::Simulator(){
+
+    kktTolAL = -1.;
+    Tsim = -1.;
+    lsim = -1;
+    ts = -1.;
+
+    s_s = -1;
+    s_A = NULL;
+    s_b = NULL;
+    s_c = NULL;
+
+    m_s = -1;
+    m_A = NULL;
+    m_b = NULL;
+    m_c = NULL;
+    
+    xCL = NULL;
+    uCL = NULL;
+    simTimes = NULL;
+    kktCL = NULL;
+    necCL = NULL;
+    solveTimeCL = NULL;
+    cgCL = NULL;
+
+    integStates = NULL;
+    
+    allocated = -1;
+}
+
+/**
+** Copy constructor
+**/
+template <class dynT,class costT,class pconT,class mayerT> Simulator<dynT,costT,pconT,mayerT>::Simulator(const Simulator<dynT,costT,pconT,mayerT>& obj) : mshoot(obj.mshoot),nlsys(obj.nlsys),simInteg(obj.simInteg),nmpcSolver(obj.nmpcSolver),options(obj.options),trajRef(obj.trajRef){
+    
+    int dx,du;
+
+    nlsys = obj.nlsys;
+    trajRef = obj.trajRef;
+    mshoot = obj.mshoot;
+    nmpcSolver = obj.nmpcSolver;
+    spgSolver = obj.spgSolver;
+    simInteg = obj.simInteg; 
+    options = obj.options;
+
+    kktTolAL = obj.kktTolAL;
+    Tsim = obj.Tsim;
+    ts = obj.ts;
+    lsim = obj.lsim;
+
+    allocated = obj.allocated;
+
+    s_s = obj.s;
+
+    s_A = new double[s_s*s_s];
+    std::copy(obj.s_A,obj.s_A+(obj.s_s)*(obj.s_s),s_A);
+
+    s_b = new double[s_s];
+    std::copy(obj.s_b,obj.s_b+obj.s_s,s_b);
+
+    s_c = new double[s_s];
+    std::copy(obj.s_c,obj.s_c+obj.s_s,s_c);
+
+    m_s = obj.m_s;
+
+    m_A = new double[m_s*m_s];
+    std::copy(obj.m_A,obj.m_A+(obj.m_s)*(obj.m_s),m_A);
+
+    m_b = new double[m_s];
+    std::copy(obj.m_b,obj.m_b+obj.m_s,m_b);
+
+    m_c = new double[m_s];
+    std::copy(obj.m_c,obj.m_c+obj.m_s,m_c);
+    
+    dx = nlsys.getDx();
+    du = nlsys.getDu();
+
+    xCL = new double[dx*(lsim+1)];
+    std::copy(obj.xCL,obj.xCL+dx*(lsim+1),xCL);
+
+    uCL = new double[du*lsim];
+    std::copy(obj.uCL,obj.uCL+du*lsim,uCL);
+
+    simTimes = new double[lsim];
+    std::copy(obj.simTimes,obj.simTimes+lsim,simTimes);
+
+    kktCL = new double[lsim];
+    std::copy(obj.kktCL,obj.kktCL+lsim,kktCL);
+
+    necCL = new double[lsim];
+    std::copy(obj.necCL,obj.necCL+lsim,necCL);
+
+    solveTimeCL = new double[lsim-1];
+    std::copy(obj.solveTimeCL,obj.solveTimeCL+lsim-1,solveTimeCL);
+
+    cgCL = new int[lsim-1];
+    std::copy(obj.cgCL,obj.cgCL+lsim-1,cgCL);
+
+    integStates = new double[(simInteg.getNsteps()+1)*simInteg.getDx()];
+    std::copy(obj.integStates,obj.integStates+(simInteg.getNsteps()+1)*simInteg.getDx(),integStates);
+}
+
+/**
+** Assignment operator
+**/
+template <class dynT,class costT,class pconT,class mayerT> Simulator<dynT,costT,pconT,mayerT> & Simulator<dynT,costT,pconT,mayerT>::operator= (const Simulator<dynT,costT,pconT,mayerT>& obj){
+
+    int dx,du;
+    double *s_A_,*s_b_,*s_c_;
+    double *m_A_,*m_b_,*m_c_;
+    double *xCL_,*uCL_;
+    double *integStates_;
+    double *simTimes_;
+    double *kktCL_,*necCL_;
+    double *solveTimeCL_;
+    int *cgCL_;
+
+    if (this != &obj){
+        
+        kktTolAL = obj.kktTolAL;    
+        Tsim = obj.Tsim;
+        lsim = obj.lsim;
+        ts = obj.ts;
+
+        allocated = obj.allocated;
+
+        s_s = obj.s_s;
+
+        if (s_A != NULL)
+            delete [] s_A;
+        s_A_ = new double[s_s*s_s];
+        std::copy(obj.s_A,obj.s_A+(obj.s_s)*(obj.s_s),s_A_);
+        s_A = s_A_;
+
+        if (s_b != NULL)
+            delete [] s_b;
+        s_b_ = new double[s_s];
+        std::copy(obj.s_b,obj.s_b+obj.s_s,s_b_);
+        s_b = s_b_;
+
+        if (s_c != NULL)
+            delete [] s_c;
+        s_c_ = new double[s_s];
+        std::copy(obj.s_c,obj.s_c+obj.s_s,s_c_);
+        s_c = s_c_;
+
+        m_s = obj.m_s;
+
+        if (m_A != NULL)
+            delete [] m_A;
+        m_A_ = new double[m_s*m_s];
+        std::copy(obj.m_A,obj.m_A+(obj.m_s)*(obj.m_s),m_A_);
+        m_A = m_A_;
+
+        if (m_b != NULL)
+            delete [] m_b;
+        m_b_ = new double[m_s];
+        std::copy(obj.m_b,obj.m_b+obj.m_s,m_b_);
+        m_b = m_b_;
+
+        if (m_c != NULL)
+            delete [] m_c;
+        m_c_ = new double[m_s];
+        std::copy(obj.m_c,obj.m_c+obj.m_s,m_c_);
+        m_c = m_c_;
+
+        nlsys = obj.nlsys;
+        simInteg = obj.simInteg;
+        nmpcSolver = obj.nmpcSolver;
+        spgSolver = obj.spgSolver;
+        mshoot = obj.mshoot;
+        options = obj.options;
+        trajRef = obj.trajRef;
+        
+        dx = nlsys.getDx();
+        du = nlsys.getDu();
+
+        if (xCL != NULL)
+            delete [] xCL;  
+        xCL_ = new double[dx*(lsim+1)];
+        std::copy(obj.xCL,obj.xCL+dx*lsim,xCL_);
+        xCL = xCL_;
+
+        if (uCL != NULL)
+            delete [] uCL;
+        uCL_ = new double[du*lsim];
+        std::copy(obj.uCL,obj.uCL+du*lsim,uCL_);
+        uCL = uCL_;
+
+        if (simTimes != NULL)
+            delete [] simTimes;
+        simTimes_ = new double[lsim];
+        std::copy(obj.simTimes,obj.simTimes+lsim,simTimes_);
+        simTimes = simTimes_;
+
+        if (kktCL != NULL)
+            delete [] kktCL;
+        kktCL_ = new double[lsim];
+        std::copy(obj.kktCL,obj.kktCL+lsim,kktCL_);
+        kktCL = kktCL_;
+
+        if (necCL != NULL)
+            delete [] necCL;
+        necCL_ = new double[lsim];
+        std::copy(obj.necCL,obj.necCL+lsim,necCL_);
+        necCL = necCL_;
+
+        if (solveTimeCL != NULL)
+            delete [] solveTimeCL;
+        solveTimeCL_ = new double[lsim-1];
+        std::copy(obj.solveTimeCL,obj.solveTimeCL+lsim-1,solveTimeCL_);
+        solveTimeCL = solveTimeCL_;
+
+        if (cgCL != NULL)
+            delete [] cgCL;
+        cgCL_ = new int[lsim-1];
+        std::copy(obj.cgCL,obj.cgCL+lsim-1,cgCL_);
+        cgCL = cgCL_;
+
+        if (integStates != NULL)
+            delete [] integStates;
+        integStates_ = new double[(simInteg.getNsteps()+1)*simInteg.getDx()];
+        std::copy(obj.integStates,obj.integStates+(simInteg.getNsteps()+1)*simInteg.getDx(),integStates_);
+        integStates = integStates_;
+    }
+    
+    return *this;
+}
+
+/**
+** Destructor
+**/
+template <class dynT,class costT,class pconT,class mayerT> Simulator<dynT,costT,pconT,mayerT>::~Simulator(){
+    
+    if (s_A != NULL)
+        delete [] s_A;
+        
+    if (s_b != NULL)
+        delete [] s_b;
+        
+    if (s_c != NULL)
+        delete [] s_c;
+        
+    if (m_A != NULL)
+        delete [] m_A;
+        
+    if (m_b != NULL)
+        delete [] m_b;
+
+    if (m_c != NULL)
+        delete [] m_c;
+    
+    if (xCL != NULL)
+        delete [] xCL;
+
+    if (uCL != NULL)
+        delete [] uCL;
+
+    if (integStates != NULL)
+        delete [] integStates;
+
+    if (simTimes != NULL)
+        delete [] simTimes;
+
+    if (kktCL != NULL)
+        delete [] kktCL;
+
+    if (necCL != NULL)
+        delete [] necCL;
+
+    if (solveTimeCL != NULL)
+        delete [] solveTimeCL;
+
+    if (cgCL != NULL)
+        delete [] cgCL;
+}
+
+/**
+* Set Butcher tableau for simulation integrator
+*/
+template <class dynT,class costT,class pconT,class mayerT> void Simulator<dynT,costT,pconT,mayerT>::setButcherSimulation(int s,double* A,double* b,double* c){
+    
+    assert(s>0);
+    assert(A!=NULL);
+    assert(b!=NULL);
+    assert(c!=NULL);
+
+    int ss;
+    s_s = s;
+    ss = s*s;
+
+    if (s_A != NULL)
+        delete [] s_A;
+    double* A_ = new double[ss];
+    std::copy(A,A+ss,A_);
+    s_A = A_;
+    
+    if (s_b != NULL)
+        delete [] s_b;
+    double* b_ = new double[s];
+    std::copy(b,b+s,b_);
+    s_b = b_;
+    
+    if (s_c != NULL)
+        delete [] s_c;
+    double* c_ = new double[s];
+    std::copy(c,c+s,c_);
+    s_c = c_;
+}
+
+/**
+* Set Butcher tableau for shooting integrator
+*/
+template <class dynT,class costT,class pconT,class mayerT> void Simulator<dynT,costT,pconT,mayerT>::setButcherShooting(int s,double* A,double* b,double* c){
+
+    assert(s>0);
+    assert(A!=NULL);
+    assert(b!=NULL);
+    assert(c!=NULL);
+
+    int ss;
+    m_s = s;
+    ss = s*s;
+
+    if (m_A != NULL)
+        delete [] m_A;    
+    double* A_ = new double[ss];
+    std::copy(A,A+ss,A_);
+    m_A = A_;
+
+    if (m_b != NULL)
+        delete [] m_b;
+    double* b_ = new double[s];
+    std::copy(b,b+s,b_);
+    m_b = b_;
+
+    if (m_c != NULL)
+        delete [] m_c;
+    double* c_ = new double[s];
+    std::copy(c,c+s,c_);
+    m_c = c_;
+}
+
+/**
+* Set initial state
+*/
+template <class dynT,class costT,class pconT,class mayerT> void Simulator<dynT,costT,pconT,mayerT>::setInitialState(double* xini){
+
+    int dx;
+
+    if (allocated<0){
+        std::cerr<<"ERROR<Simulator>: state trajectory not allocated, cannot initialize state."<<std::endl;
+        return;
+    }
+
+    dx = nlsys.getDx();
+    if (dx<=0){
+        std::cerr<<"ERROR<Simulator>: state dimension is nonpositive."<<std::endl;
+        return;
+    }
+    std::copy(xini,xini+dx,xCL);
+}
+
+/**
+* Initialization method
+*/
+template <class dynT,class costT,class pconT,class mayerT> void Simulator<dynT,costT,pconT,mayerT>::init(){
+
+    assert(ts>0.);
+    assert(lsim>=2);
+    
+    int dx,du;
+
+    Tsim = (lsim-1)*ts;
+
+    /* Allocate data for simulation results */
+    dx = nlsys.getDx();
+    du = nlsys.getDu();
+    xCL = new double[dx*(lsim+1)];
+    uCL = new double[du*lsim];
+    kktCL = new double[lsim];
+    necCL = new double[lsim];
+    simTimes = new double[lsim];
+    solveTimeCL = new double[lsim-1];
+    cgCL = new int[lsim]; 
+    allocated = 1;
+
+    /* Initialize multiple-shooter mshoot */
+    if (mshoot.getPredictionTime()<=0.){
+        std::cerr<<"ERROR<Simulator>: multiple-shooting prediction horizon not set."<<std::endl;
+        return;
+    }
+    mshoot.setSamplingPeriod(ts);
+    mshoot.setNumberIntegrationSteps(m_nsteps);
+    mshoot.setButcher(m_s,m_A,m_b,m_c);
+    
+    /* Initialize trust-region solver nmpcSolver  */
+    nmpcSolver.setShooter(mshoot);
+    nmpcSolver.setSolverOptions(options);
+    nmpcSolver.init();
+
+    /* Initialise SPG solver spgSolver */
+/*    spgSolver.setShooter(mshoot);
+    spgSolver.setSolverOptions(options);
+    spgSolver.init(); */
+    
+    /* Initialize simulation integrator simInteg */
+    simInteg.setTimeInterval(ts);
+    simInteg.setNsteps(s_nsteps);
+    simInteg.setButcher(s_s,s_A,s_b,s_c);
+    simInteg.setInputScaling(NULL);
+    simInteg.init();
+
+    /* Initialize integration states */
+    integStates = new double[(simInteg.getNsteps()+1)*simInteg.getDx()];
+    memset(integStates,0,(simInteg.getNsteps()+1)*simInteg.getDx()*SZDBL);
+    simInteg.setStates(integStates);
+
+    simInteg.displayParameters();
+    simInteg.displayButcher();
+}
+
+/**
+** Simulation method
+**/
+template <class dynT,class costT,class pconT,class mayerT> void Simulator<dynT,costT,pconT,mayerT>::run(){
+
+    int i,dx,du,it,n;
+    double t,Tpred;
+    double avgSolveTime;
+    double rhoRThalved;
+    double *xx,*uu,*unmpc,*kk,*ne,*st;
+    int *cg;
+
+#if defined(__APPLE__)
+    clock_t str,end;
+#endif
+#if defined(__unix__)
+    timespec str,end;
+#endif
+
+    Tpred = mshoot.getPredictionTime();
+    dx = nlsys.getDx();
+    du = nlsys.getDu();
+
+    xx = xCL;
+    uu = uCL;
+    kk = kktCL;
+    ne = necCL;
+    cg = cgCL;
+    t = 0.;
+    simTimes[0] = t;
+
+    std::cout<<"=========================="<<std::endl;
+    std::cout<<"Initial state at time "<<simTimes[0]<<": "<<std::endl;
+    for (i=0;i<dx;++i)
+        std::cout<<*(xx+i)<<std::endl;
+    std::cout<<"=========================="<<std::endl;
+
+    /* Set initial OCP state */
+    nmpcSolver.setXest(xx);
+
+    /* Set reference trajectory */
+    trajRef.setInitialTime(t);
+    trajRef.setFinalTime(t+Tpred);
+    trajRef.setNumberSamples(nmpcSolver.getNs());
+    trajRef.computeOutputReference();
+    trajRef.computeInputReference();
+    if (trajRef.getNs() != nmpcSolver.getNs()){
+        std::cerr<<"ERROR<Simulator>: number of shooting nodes different from number of reference points."<<std::endl;
+        return;
+    }
+    nmpcSolver.setReference(trajRef.getOutputReference(),trajRef.getInputReference());
+
+//#ifndef BIOREC
+    /* Cold-start for full solving: set primal & dual to 0 */
+    nmpcSolver.coldStartPrimalDual();
+    nmpcSolver.displayIterate();
+    /* Full Lancelot solve to start */
+    nmpcSolver.displayBounds();
+    nmpcSolver.solveLancelot();
+    *kk = nmpcSolver.getKKT();
+    *ne = nmpcSolver.getFeas();
+//#else
+    /* Initialise primal-dual variable on */
+//    nmpcSolver.initBioReactor();
+//    *kk = 0;
+//    *ne = 0;
+//#endif
+    rhoRThalved = 100.;
+/*    nmpcSolver.setMaxPrimalIter(2000);
+    nmpcSolver.setHalvedRho(rhoRThalved);
+    nmpcSolver.initHessianApprox();
+    options.setBandWidth(8);
+    nmpcSolver.setBandWidth(options.getBandWidth());
+    nmpcSolver.solveRealTime(1.E-5); */
+
+    unmpc = nmpcSolver.getNmpcLaw();
+    std::copy(unmpc,unmpc+du,uu);
+
+    std::cout<<"NMPC optimal input at time "<<simTimes[0]<<": "<<std::endl;
+    for (i=0;i<du;++i)
+        std::cout<<*(uu+i)<<std::endl;
+    std::cout<<"====================="<<std::endl;
+    std::cout<<"AL kkt after full solve: "<<*kk<<std::endl;
+    std::cout<<"Feas after full solve: "<<*ne<<std::endl;
+#if COUNT_CG
+    std::cout<<"Total # CG iterations: "<<nmpcSolver.getGlobCG()<<std::endl;
+    std::cout<<"Total # CG restarts: "<<nmpcSolver.getGlobRestart()<<std::endl;
+#endif
+    std::cout<<"Final penalty parameter: "<<nmpcSolver.getRho()<<std::endl;
+
+#if SIM_FUL
+    *cg = nmpcSolver.getGlobCG();
+#endif
+    /* State update */
+    simInteg.setStateIni(xx);
+    simInteg.setStateFin(xx+dx);
+    simInteg.setInput(uu);
+    simInteg.integrateStateFixed();
+
+    /* Go to next time instant */
+    xx += dx;
+    uu += du;
+    ++kk;
+    ++ne;
+    ++cg;
+    t += ts;
+//   nmpcSolver.displayMembers(10);
+    return;
+
+#if SIM_RTI
+    nmpcSolver.setMaxCumCG(500);
+    nmpcSolver.setMaxPrimalIter(5);
+    nmpcSolver.setHalvedRho(rhoRThalved);
+    nmpcSolver.initHessianApprox();
+    options.setBandWidth(10);
+    nmpcSolver.setBandWidth(options.getBandWidth());
+    st = solveTimeCL;
+    avgSolveTime = 0.;
+#endif
+    /** NMPC loop with real-time iterations */
+    n = 0;
+    it = 1;
+    while (1){
+        if (it>=lsim)
+            break;
+        simTimes[it] = t;
+
+        std::cout<<"===================="<<std::endl;
+        std::cout<<"State at time "<<simTimes[it]<<": "<<std::endl;
+        for (i=0;i<dx;++i)
+            std::cout<<*(xx+i)<<std::endl;
+        std::cout<<"Penalty parameter at time "<<simTimes[it]<<": "<<nmpcSolver.getRho()<<std::endl;
+        std::cout<<"===================="<<std::endl;
+
+        /* Set initial OCP state */
+        nmpcSolver.setXest(xx);
+        nmpcSolver.displayXest();
+
+        /* At first simulation time instant, compute trust-region radius */
+//        if (it==1){
+//            nmpcSolver.evalALgradient();
+//            nmpcSolver.evalKKTprim();
+//            nmpcSolver.setTrustRadius(0.1*nmpcSolver.getKKT());
+//        }
+        
+        /* Set reference trajectory */
+        trajRef.setInitialTime(t);
+        trajRef.setFinalTime(t+Tpred);
+        trajRef.computeOutputReference();
+        trajRef.computeInputReference();        
+        if (trajRef.getNs() != nmpcSolver.getNs()){
+            std::cerr<<"ERROR<Simulator>: number of shooting nodes different from number of reference points."<<std::endl;
+            return;
+        }
+        nmpcSolver.setReference(trajRef.getOutputReference(),trajRef.getInputReference());
+
+#if SIM_FUL
+//#ifndef BIOREC
+        /* Cold-start for full solving: set primal & dual to 0 */
+        nmpcSolver.coldStartPrimalDual();
+//#else
+//        nmpcSolver.shiftPrimalDual();
+//#endif
+#endif
+#if SIM_RTI
+        /* Warm-start for truncated solving: shift in an NMPC-fashion */
+        nmpcSolver.shiftPrimalDual();
+#endif
+
+        /* Solve OCP with real-time method */
+#if SIM_RTI
+    //   spgSolver.solveRealTime();
+#if defined(__unix__)
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &str);
+#endif
+#if defined(__APPLE__)
+        str = clock();
+#endif
+        nmpcSolver.solveRealTime(kktTolAL);
+#if defined(__unix__)
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
+#endif
+#if defined(__APPLE__)
+        end = clock();
+#endif
+#endif
+    //    std::cout<<"Solver time in sec:"<<(double)(getTimeDiff(str,end).tv_nsec)/1E9<<std::endl;
+#if SIM_FUL        
+        nmpcSolver.solveLancelot();
+#endif
+        unmpc = nmpcSolver.getNmpcLaw();
+        std::copy(unmpc,unmpc+du,uu);
+        *kk = nmpcSolver.getKKT();
+        *ne = nmpcSolver.getFeas();
+#if SIM_RTI        
+        *cg = nmpcSolver.getCumCG();
+#endif
+#if SIM_FUL
+        *cg = nmpcSolver.getGlobCG();
+#endif
+
+        /* Break if nan or too large */
+#if SIM_RTI
+        if (isnan(*kk)||isnan(*ne)||(*kk>=1E5)||(*ne>=1E5)){
+            std::cout<<"KKT or feasibility violated, abort."<<std::endl;
+            return;
+        }
+#endif
+        std::cout<<"NMPC input at time "<<simTimes[it]<<": "<<std::endl;
+        for (i=0;i<du;++i)
+            std::cout<<*(uu+i)<<std::endl;
+        std::cout<<"=================="<<std::endl;
+#if SIM_FUL
+        std::cout<<"AL kkt after full solve: "<<*kk<<std::endl;
+        std::cout<<"Feas after full solve: "<<*ne<<std::endl;
+        std::cout<<"Total # CG iterations: "<<nmpcSolver.getGlobCG()<<std::endl;
+        std::cout<<"Total # CG restarts: "<<nmpcSolver.getGlobRestart()<<std::endl;
+        std::cout<<"Final penalty parameter: "<<nmpcSolver.getRho()<<std::endl;
+#endif
+
+    //    std::cout<<"Solver time:"<<(double)(end-str)/CLOCKS_PER_SEC<<std::endl;
+
+#if SIM_RTI
+#if defined(__APPLE__)
+        *st = (double)(end-str)/CLOCKS_PER_SEC;
+        avgSolveTime += (double)(end-str)/CLOCKS_PER_SEC;
+#endif
+#if defined(__unix__)
+        *st = (double)(getTimeDiff(str,end).tv_nsec)/1E9;
+        avgSolveTime += (double)(getTimeDiff(str,end).tv_nsec)/1E9;
+#endif 
+#endif
+        /* State update */
+        simInteg.setStateIni(xx);
+        simInteg.setStateFin(xx+dx);
+        simInteg.setInput(uu);
+        simInteg.integrateStateFixed();
+
+        /* Go to next time instant */
+        xx += dx;
+        uu += du;
+        ++kk;
+        ++ne;
+        ++cg;
+        t += ts;
+        ++it;
+        ++n;
+        ++st;
+    }
+#if SIM_RTI
+    std::cout<<"Over "<<n<<" samples, average solving is time:"<<avgSolveTime/n<<std::endl;
+#endif
+}
+
+#if defined(__unix__)
+/**
+* To measure time interval with clock_getttime()
+**/
+template <class dynT,class costT,class pconT,class mayerT> timespec Simulator<dynT,costT,pconT,mayerT>::getTimeDiff(timespec start,timespec end){
+
+    timespec temp;
+    if ((end.tv_nsec-start.tv_nsec)<0){
+        temp.tv_sec = end.tv_sec-start.tv_sec-1;
+        temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+    } 
+    else {
+        temp.tv_sec = end.tv_sec-start.tv_sec;
+        temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+    }
+    return temp;
+}
+#endif
+
+/**
+* Save closed-loop states to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::saveStates(const char* file){
+    
+    int i,j,dx;
+    double *xx;
+    std::ofstream sfile;
+    
+    dx = nlsys.getDx();
+
+    sfile.open(file);
+    xx = xCL;
+    for (i=0;i<lsim+1;++i)
+        for (j=0;j<dx;++j)
+            sfile << *xx++ <<"\n";
+
+    sfile.close();    
+}
+
+/**
+* Save NMPC inputs to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::saveInputs(const char* file){
+
+    int i,j,du;
+    double *uu;
+    std::ofstream sfile;
+
+    du = nlsys.getDu();
+
+    sfile.open(file);
+
+    uu = uCL;
+    for (i=0;i<lsim;++i)
+        for (j=0;j<du;++j)
+            sfile << *uu++ <<"\n";
+
+    sfile.close();
+}
+
+/**
+* Save simulation time instants to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::saveTimes(const char* file){
+
+    int i;
+    std::ofstream sfile;
+
+    sfile.open(file);
+
+    for (i=0;i<lsim;++i)
+        sfile << simTimes[i] <<"\n";
+
+    sfile.close();
+}
+
+/**
+* Save dimensions to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::saveDimensions(const char* file){
+
+    int dx,du;
+    std::ofstream sfile;
+    
+    dx = nlsys.getDx();
+    du = nlsys.getDu();
+
+    sfile.open(file);
+
+    sfile << dx <<"\n";
+    sfile << du <<"\n";
+    sfile << lsim <<"\n";
+
+    sfile.close();
+}
+
+/**
+* Save KKT to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::saveKKT(const char* file){
+
+    int i;
+    std::ofstream sfile;
+
+    sfile.open(file);
+
+    for (i=0;i<lsim;++i)
+        sfile << kktCL[i] <<"\n";
+
+    sfile.close();
+}
+
+/**
+* Save feasiblity to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::saveFeas(const char* file){
+
+    int i;
+    std::ofstream sfile;
+
+    sfile.open(file);
+
+    for (i=0;i<lsim;++i)
+        sfile << necCL[i] <<"\n";
+
+    sfile.close();
+}
+
+/**
+* Save solving times to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::saveSolveTime(const char* file){
+
+    int i;
+    std::ofstream sfile;
+
+    sfile.open(file);
+
+    for (i=0;i<lsim-1;++i)
+        sfile<< solveTimeCL[i] <<"\n";
+
+    sfile.close();
+}
+
+/**
+* Save cumulative CG iterations to .txt file
+*/
+template <class dynT,class costT,class pconT,class mayerT>
+    void Simulator<dynT,costT,pconT,mayerT>::saveCG(const char* file){
+
+    int i;
+    std::ofstream sfile;
+
+    sfile.open(file);
+
+    for (i=0;i<lsim-1;++i)
+        sfile<< cgCL[i] <<"\n";
+
+    sfile.close();
+}
+
+/********
+*** For debugging
+********/
+#if SCAL_VAR
+/* Displays state transformation */
+template <class dynT,class costT,class pconT,class mayerT> 
+    void Simulator<dynT,costT,pconT,mayerT>::displayStateTransfo(){
+    nmpcSolver.displayStateTransfo();
+}
+
+/* Displays input transformation */
+template <class dynT,class costT,class pconT,class mayerT>
+    void Simulator<dynT,costT,pconT,mayerT>::displayInputTransfo(){
+    nmpcSolver.displayInputTransfo();
+}
+
+#endif
+
+

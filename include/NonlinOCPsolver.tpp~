@@ -1,0 +1,2451 @@
+#include <iostream>
+#include <iomanip>
+#include <string.h>
+#include <algorithm>
+#include <time.h>
+
+#include "NonlinOCPsolver.h"
+#include "macros.h"
+#include "userData.h"
+
+/**
+** Default constructor
+**/
+template <class dynT,class costT,class pconT,class mayerT> NonlinOCPsolver<dynT,costT,pconT,mayerT>::NonlinOCPsolver(){
+	
+	z = NULL;
+    zS = NULL;
+    negstp = NULL;
+
+    econ = NULL;
+	mu = NULL;
+	uopt = NULL;
+    
+    zmin = NULL;
+    zmax = NULL;
+    
+    gAL = NULL;
+    gALshoot = NULL;
+    gALshootS = NULL;
+    gALpath = NULL;
+    gALpathS = NULL;
+	dffGshoot = NULL;
+	dffGpath = NULL;
+
+    hALshoot = NULL;
+    hALshootRed = NULL;
+    hALpath = NULL;
+    hALpathRed = NULL;
+    prdHss = NULL;
+    
+    indFreeVars = NULL;
+    freeVars = NULL;
+    varStatus = NULL;
+    ivarFreeState = NULL;
+    ivarFreeInput = NULL;
+    ivarFreeSlack = NULL;
+    ivarFreeGroupShoot = NULL;
+    nfreeState = NULL;
+    nfreeInput = NULL;
+    nfreeSlack = NULL;
+    nfreeGroupShoot = NULL;
+
+    secVecShoot = NULL;
+    secVecPath = NULL;
+
+    errPrim = 0;
+}
+
+/**
+** Destructor
+**/
+template <class dynT,class costT,class pconT,class mayerT> NonlinOCPsolver<dynT,costT,pconT,mayerT>::~NonlinOCPsolver(){
+
+	if (z != NULL)
+		delete [] z;
+
+    if (zS != NULL)
+        delete [] zS;
+    
+    if (econ != NULL)
+        delete [] econ;
+     	
+	if (uopt != NULL)
+		delete [] uopt;
+    
+    if (zmin != NULL)
+        delete [] zmin;
+    
+    if (zmax != NULL)
+        delete [] zmax;
+     
+    if (gAL != NULL)
+        delete [] gAL;
+    
+    if (gALshoot != NULL)    
+        delete [] gALshoot;
+
+    if (gALshootS != NULL)
+        delete [] gALshootS;
+
+    if (gALpathS != NULL)
+        delete [] gALpathS;
+
+	if (dffGshoot != NULL)
+		delete [] dffGshoot;
+
+	if (dffGpath != NULL)
+		delete [] dffGpath;
+
+    if (hALshoot != NULL)
+        delete [] hALshoot;
+
+    if (hALshootRed != NULL)
+        delete [] hALshootRed;
+    
+    if (hALpath != NULL)
+		delete [] hALpath;
+
+    if (hALpathRed != NULL)
+        delete [] hALpathRed;
+
+    if (prdHss != NULL)
+        delete [] prdHss;
+
+    if (freeVars != NULL)
+        delete [] freeVars;
+
+    if (indFreeVars != NULL)
+        delete [] indFreeVars;
+
+    if (varStatus != NULL)
+        delete [] varStatus;
+
+    if (ivarFreeState != NULL)
+        delete [] ivarFreeState;
+
+    if (ivarFreeInput != NULL)
+        delete [] ivarFreeInput;
+
+    if (ivarFreeSlack != NULL)
+        delete [] ivarFreeSlack;
+   
+    if (nfreeState != NULL)
+        delete [] nfreeState;
+    
+    if (nfreeInput != NULL)
+        delete [] nfreeInput;
+    
+    if (nfreeSlack != NULL)
+        delete [] nfreeSlack;
+    
+    if (nfreeGroupShoot != NULL)
+        delete [] nfreeGroupShoot;
+
+    if (ivarFreeGroupShoot != NULL)
+        delete [] ivarFreeGroupShoot;
+
+    if (negstp != NULL)
+        delete [] negstp;
+     
+    if (mu != NULL)
+        delete [] mu;
+     
+    if (secVecShoot != NULL)
+        delete [] secVecShoot;
+     
+    if (secVecPath != NULL)
+        delete [] secVecPath;
+}	  
+
+/**
+* Copy constructor
+*/ 
+template <class dynT,class costT,class pconT,class mayerT> 
+NonlinOCPsolver<dynT,costT,pconT,mayerT>::NonlinOCPsolver(const NonlinOCPsolver<dynT,costT,pconT,mayerT>& obj) : shooter(obj.shooter),
+                                                                                                                 activDetector(obj.activDetector),
+                                                                                                                 precSubRefiner(obj.precSubRefiner),
+                                                                                                                 precProjRefiner(obj.precProjRefiner),
+                                                                                                                 qmod(obj.qmod){
+
+    sini = obj.sini;
+
+    pivTol = obj.pivTol;
+
+    eta0 = obj.eta0;
+    eta1 = obj.eta1;
+    eta2 = obj.eta2;
+
+    sig1 = obj.sig1;
+    sig2 = obj.sig2;
+    sig3 = obj.sig3;
+
+    maxPit = obj.maxPit;
+    maxDit = obj.maxDit;
+
+    mulPen = obj.mulPen;
+    halfRho = obj.halfRho;
+
+    Ns_ = obj.Ns_;
+
+    dZ = obj.dZ;
+    dZBL = obj.dZBL;
+    dZshoot = obj.dZshoot;
+    dZshootBL = obj.dZshootBL;
+    dZpath = obj.dZpath;
+    dZpathBL = obj.dZpathBL;
+
+    dLshoot = obj.dLshoot;
+    dLpath = obj.dLpath;
+    dL = obj.dL;
+    dLBL = obj.dLBL;
+
+    dGshoot = obj.dGshoot;
+    dGshootBL = obj.dGshootBL;
+    dGshootNT = obj.dGshootNT;
+	dGpath = obj.dGpath;
+	dGpathBL = obj.dGpathBL;
+    dGpathNT = obj.dGpathNT;
+
+	dhS = obj.dhS;
+	dhP = obj.dhP;
+    dHshoot = obj.dHshoot;
+    dHpath = obj.dHpath;
+    
+    du = obj.du;
+    dubl = obj.dubl;
+	dx = obj.dx;
+    dxbl = obj.dxbl;
+	dxu = obj.dxu;
+	dxux = obj.dxux;
+	dpc = obj.dpc;
+    
+    kkt = obj.kkt;
+    kkt2 = obj.kkt2;
+    kktTolAbs = obj.kktTolAbs;
+    nec = obj.nec;
+    nec2 = obj.nec2;
+    necTolAbs = obj.necTolAbs;
+    cgTol2 = obj.cgTol2;
+    trRad = obj.trRad;
+    norIstp = obj.norIstp;
+    nor2stp = obj.nor2stp;
+
+    cumCG = obj.cumCG;
+    cumRestart = obj.cumRestart;
+    errPrim = obj.errPrim;
+
+    z = new double[dZ];
+    std::copy(obj.z,obj.z+obj.dZ,z);
+
+    zS = new double[dZ];
+    std::copy(obj.zS,obj.zS+obj.dZ,zS);
+
+	negstp = new double[dZ];
+	std::copy(obj.negstp,obj.negstp+obj.dZ,dZ);
+    
+    econ = new double[dL];
+    std::copy(obj.econ,obj.econ+obj.dL,econ);
+
+    mu = new double[dL];
+    std::copy(obj.mu,obj.mu+obj.dL,mu);
+    
+    uopt = new double[du];
+    std::copy(obj.uopt,obj.uopt+obj.du,uopt);
+
+    zmin = new double[dZ];
+    std::copy(obj.zmin,obj.zmin+obj.dZ,zmin);
+    
+    zmax = new double[dZ];
+    std::copy(obj.zmax,obj.zmax+obj.dZ,zmax);
+    
+    gAL = new double[dZ];
+    std::copy(obj.gAL,obj.gAL+obj.dZ,gAL);
+
+    gALshoot = new double[dGshoot];
+    std::copy(obj.gALshoot,obj.gALshoot+obj.dGshoot,gALshoot);
+
+    gALshootS = new double[dGshoot];
+    std::copy(obj.gALshootS,obj.gALshootS+obj.dGshoot,gALshootS);
+
+    gALpath = obj.gALpath;
+
+    gALpathS = new double[dGpath];
+    std::copy(obj.gALpathS,obj.gALpathS+obj.dGpath,gALpathS);
+
+	dffGshoot = new double[dGshoot];
+	std::copy(obj.dffGshoot,obj.dffGshoot+dGshoot,dffGshoot);
+	
+	dffGpath = new double[dGpath];
+	std::copy(obj.dffGpath,obj.dffGpath+dGpath,dffGpath);
+
+    hALshoot = new double[dHshoot];
+    std::copy(obj.hALshoot,obj.hALshoot+obj.dHshoot,hALshoot);
+
+    hALshootRed = new double[dHshoot];
+    std::copy(obj.hALshootRed,obj.hALshootRed+obj.dHshoot,hALshootRed);
+
+    hALpath = new double[dHpath];
+    std::copy(obj.hALpath,obj.hALpath+obj.dHpath,hALpath);
+
+    hALpathRed = new double[dHpath];
+    std::copy(obj.hALpathRed,obj.hALpathRed+obj.dHpath,hALpathRed);
+
+    prdHss = new double[dZ];
+    std::copy(obj.prdHss,obj.prdHss+obj.dZ,prdHss);
+    
+    freeVars = new int[dZ];
+    std::copy(obj.freeVars,obj.freeVars+obj.dZ,freeVars);
+
+    indFreeVars = new int[dZ];
+    std::copy(obj.indFreeVars,obj.indFreeVars+obj.dZ,indFreeVars);
+
+    varStatus = new int[dZ];
+    std::copy(obj.varStatus,obj.varStatus+obj.dZ,varStatus);
+
+    ivarFreeState = new int[(Ns_+1)*dx];
+    std::copy(obj.ivarFreeState,obj.ivarFreeState+(obj.Ns_+1)*obj.dx,ivarFreeState);
+
+    ivarFreeInput = new int[Ns_*du];
+    std::copy(obj.ivarFreeInput,obj.ivarFreeInput+obj.Ns_*obj.du,ivarFreeInput);
+
+    ivarFreeSlack = new int[Ns_*dpc];
+    std::copy(obj.ivarFreeSlack,obj.ivarFreeSlack+obj.Ns_*obj.dpc,ivarFreeSlack);
+
+    ivarFreeGroupShoot = new int[Ns_*dxux];
+    std::copy(obj.ivarFreeGroupShoot,obj.ivarFreeGroupShoot+obj.Ns_*obj.dxux,ivarFreeGroupShoot);
+
+    nfreeState = new int[Ns_+1];
+    std::copy(obj.nfreeState,obj.nfreeState+obj.Ns_+1,nfreeState);
+
+    nfreeInput = new int[Ns_];
+    std::copy(obj.nfreeInput,obj.nfreeInput+obj.Ns_,nfreeInput);
+
+    nfreeSlack = new int[Ns_];
+    std::copy(obj.nfreeSlack,obj.nfreeSlack+obj.Ns_,nfreeSlack);
+
+    nfreeGroupShoot = new int[Ns_];
+    std::copy(obj.nfreeGroupShoot,obj.nfreeGroupShoot+obj.Ns_,nfreeGroupShoot);
+
+    secVecShoot = new double[dxux];
+    std::copy(obj.secVecShoot,obj.secVecShoot+obj.dxux,secVecShoot);
+
+    secVecPath = new double[dpc];
+    std::copy(obj.secVecPath,obj.secVecPath+obj.dpc,secVecPath);
+}
+
+/**
+* Assignment operator
+*/
+template <class dynT,class costT,class pconT,class mayerT> 
+NonlinOCPsolver<dynT,costT,pconT,mayerT>& NonlinOCPsolver<dynT,costT,pconT,mayerT>::operator=(const NonlinOCPsolver<dynT,costT,pconT,mayerT>& obj){
+
+    double *z_,*negstp_,*zS_,*mu_,*econ_,*uopt_;
+    double *zmin_,*zmax_;
+    double *gAL_,*gALshoot_,*gALshootS_,*dffGshoot_;
+    double *gALpathS_,*dffGpath_;
+    double *hALshoot_,*hALpath_,*hALshootRed_,*hALpathRed_;
+    double *prdHss_;
+    int *indFreeVars_,*freeVars_,*varStatus_;
+    int *ivarFreeState_,*ivarFreeInput_,*ivarFreeSlack_,*ivarFreeGroupShoot_;
+    int *nfreeState_,*nfreeInput_,*nfreeSlack_,*nfreeGroupShoot_;
+    double *secVecShoot_,*secVecPath_;
+
+    if (this != &obj){
+        shooter = obj.shooter;
+        activDetector = obj.activDetector;
+        precSubRefiner = obj.precSubRefiner;
+        precProjRefiner = obj.precProjRefiner;
+        qmod = obj.qmod;
+
+        sini = obj.sini;
+
+        pivTol = obj.pivTol;
+
+        eta0 = obj.eta0;
+        eta1 = obj.eta1;
+        eta2 = obj.eta2;
+        
+        sig1 = obj.sig1;
+        sig2 = obj.sig2;
+        sig3 = obj.sig3;
+        
+        maxPit = obj.maxPit;
+        maxDit = obj.maxDit;
+
+        mulPen = obj.mulPen;
+        halfRho = obj.halfRho;
+
+        trRad = obj.trRad;
+        
+        kkt = obj.kkt;
+        kkt2 = obj.kkt2;
+        kktTolAbs = obj.kktTolAbs;
+        nec = obj.nec;
+        nec2 = obj.nec2;
+        necTolAbs = obj.necTolAbs;
+        cgTol2 = obj.cgTol2;
+        norIstp = obj.norIstp;
+        nor2stp = obj.nor2stp;
+
+        cumCG = obj.cumCG;
+        cumRestart = obj.cumRestart;
+        errPrim = obj.errPrim;
+
+        Ns_ = obj.Ns_;
+        Ns = obj.Ns;
+
+        dZshoot = obj.dZshoot;
+        dZshootBL = obj.dZshootBL;
+        dZpath = obj.dZpath;
+        dZpathBL = obj.dZpathBL;
+        dZ = obj.dZ;
+        dZBL = obj.dZBL;
+        
+        dLshoot = obj.dLshoot;
+        dLpath = obj.dLpath;
+        dL = obj.dL;
+        dLBL = obj.dLBL;
+        
+        du = obj.du;
+        dubl = obj.dubl;
+        dx = obj.dx;
+        dxbl = obj.dxbl;
+        dxu = obj.dxu;
+        dxux = obj.dxux;
+        dpc = obj.dpc;
+
+        dGshoot = obj.dGshoot;
+        dGshootBL = obj.dGshootBL;
+        dGshootNT = obj.dGshootNT;
+
+        dGpath = obj.dGpath;
+        dGpathBL = obj.dGpathBL;
+        dGpathNT = obj.dGpathNT;
+
+        dhS = obj.dhS;
+        dhP = obj.dhP;
+        dHshoot = obj.dHshoot;
+        dHpath = obj.dHpath;
+
+        /* z */
+        if (z != NULL)
+            delete [] z;
+        if (obj.z != NULL){
+            z_ = new double[dZ];
+            std::copy(obj.z,obj.z+obj.dZ,z_);
+            z = z_;
+        }
+        else {
+            z = NULL;
+        }
+
+        /* negstp */
+        if (negstp != NULL)
+            delete [] negstp;
+        if (obj.negstp != NULL){
+            negstp_ = new double[dZ];
+            std::copy(obj.negstp,obj.negstp+obj.dZ,negstp_);
+            negstp = negstp_;
+        }
+        else {
+            negstp = NULL;
+        }
+
+        /* zS */
+        if (zS != NULL)
+            delete [] zS;
+        if (obj.zS != NULL){
+            zS_ = new double[dZ];
+            std::copy(obj.zS,obj.zS+obj.dZ,zS_);
+            zS = zS_;
+        }
+        else {
+            zS = NULL;
+        }
+
+        /* mu */
+        if (mu != NULL)
+            delete [] mu;
+        if (obj.mu != NULL){
+            mu_ = new double[dL];
+            std::copy(obj.mu,obj.mu+obj.dL,mu_);
+            mu = mu_;
+        }
+        else {
+            mu = NULL;
+        }
+
+        /* econ */
+        if (econ != NULL)
+            delete [] econ;
+        if (obj.econ != NULL){
+            econ_ = new double[dL];
+            std::copy(obj.econ,obj.econ+obj.dL,econ_);
+            econ = econ_;
+        }
+        else {
+            econ = NULL;
+        }
+
+        /* uopt */
+        if (uopt != NULL)
+            delete [] uopt;
+        if (obj.uopt != NULL){
+            uopt_ = new double[du];
+            std::copy(obj.uopt,obj.uopt+obj.du,uopt_);
+            uopt = uopt_;
+        }
+        else {
+            uopt = NULL;
+        }
+
+        /* zmin */
+        if (zmin != NULL)
+            delete [] zmin;
+        if (obj.zmin != NULL){    
+            zmin_ = new double[dZ];
+            std::copy(obj.zmin,obj.zmin+obj.dZ,zmin_);
+            zmin = zmin_;
+        }
+        else {
+            zmin = NULL;
+        }
+        
+        /* zmax */
+        if (zmax != NULL)
+            delete [] zmax;
+        if (obj.zmax != NULL){
+            zmax_ = new double[dZ];
+            std::copy(obj.zmax,obj.zmax+obj.dZ,zmax_);
+            zmax = zmax_;
+        }
+        else {
+            zmax = NULL;
+        }
+        
+        /* gAL */
+        if (gAL != NULL)
+            delete [] gAL;
+
+        if (obj.gAL != NULL){
+            gAL_ = new double[dZ];
+            std::copy(obj.gAL,obj.gAL+obj.dZ,gAL_);
+            gAL = gAL_;
+        }
+        else {
+            gAL = NULL;
+        }
+
+        /* gALshoot */
+        if (gALshoot != NULL)
+            delete [] gALshoot;
+        if (obj.gALshoot != NULL){
+            gALshoot_ = new double[dGshoot];
+            std::copy(obj.gALshoot,obj.gALshoot+obj.dGshoot,gALshoot_);
+            gALshoot = gALshoot_;
+        }
+        else {
+            gALshoot = NULL;
+        }
+
+        /* gALshootS */
+        if (gALshootS != NULL)
+            delete [] gALshootS;
+        if (obj.gALshootS != NULL){
+            gALshootS_ = new double[dGshoot];
+            std::copy(obj.gALshootS,obj.gALshootS+obj.dGshoot,gALshootS_);
+            gALshootS = gALshootS_;
+        }
+        else {
+            gALshootS = NULL;
+        }
+
+        /* dffGshoot */
+        if (dffGshoot != NULL)
+            delete [] dffGshoot;
+        if (obj.dffGshoot != NULL){    
+            dffGshoot_ = new double[dGshoot];
+            std::copy(obj.dffGshoot,obj.dffGshoot+obj.dGshoot,dffGshoot_);
+            dffGshoot = dffGshoot_;
+        } 
+        else {
+            dffGshoot = NULL;
+        }
+
+        /* gALpath */
+        gALpath = obj.gALpath;
+
+        /* gALpathS */
+        if (gALpathS != NULL)
+            delete [] gALpathS;
+        if (obj.gALpathS != NULL){
+            gALpathS_ = new double[dGpath];
+            std::copy(obj.gALpathS,obj.gALpathS+obj.dGpath,gALpathS_);
+            gALpathS = gALpathS_;
+        }
+        else {
+            gALpathS = NULL;
+        }
+
+        /* dffGpath */
+        if (dffGpath != NULL)
+            delete [] dffGpath;
+        if (obj.dffGpath != NULL){ 
+            dffGpath_ = new double[dGpath];
+            std::copy(obj.dffGpath,obj.dffGpath+obj.dGpath,dffGpath_);
+            dffGpath = dffGpath_;
+        }
+        else {
+            dffGpath = NULL;
+        }
+
+        /* hALshoot */
+        if (hALshoot != NULL)
+            delete [] hALshoot;
+        if (obj.hALshoot != NULL){
+            hALshoot_ = new double[dHshoot];
+            std::copy(obj.hALshoot,obj.hALshoot+obj.dHshoot,hALshoot_);
+            hALshoot = hALshoot_;
+        }
+        else {
+            hALshoot = NULL;
+        }
+
+        /* hALshootRed */
+        if (hALshootRed != NULL)
+            delete [] hALshootRed;
+        if (obj.hALshootRed != NULL){
+            hALshootRed_ = new double[dHshoot];
+            std::copy(obj.hALshootRed,obj.hALshootRed+obj.dHshoot,hALshootRed_);
+            hALshootRed = hALshootRed_;
+        }
+        else {
+            hALshootRed = NULL;
+        }
+
+        /* hALpath */
+        if (hALpath != NULL)
+            delete [] hALpath;
+
+        if (obj.hALpath != NULL){
+            hALpath_ = new double[dHpath];
+            std::copy(obj.hALpath,obj.hALpath+obj.dHpath,hALpath_);
+            hALpath = hALpath_;
+        }
+        else {
+            hALpath = NULL;
+        }
+
+        /* hALpathRed */
+        if (hALpathRed != NULL)
+            delete [] hALpathRed;
+        if (obj.hALpathRed != NULL){
+            hALpathRed_ = new double[dHpath];
+            std::copy(obj.hALpathRed,obj.hALpathRed+obj.dHpath,hALpathRed_);
+            hALpathRed = hALpathRed_;
+        }
+        else {
+            hALpathRed = NULL;
+        }  
+
+        /* prdHss */
+        if (prdHss != NULL)
+            delete [] prdHss;
+        if (obj.prdHss != NULL){
+            prdHss_ = new double[dZ];
+            std::copy(obj.prdHss,obj.prdHss+obj.dZ,prdHss_);
+            prdHss = prdHss_;
+        }
+        else {
+            prdHss = NULL;
+        }
+
+        /* secVecShoot */
+        if (secVecShoot != NULL)
+            delete [] secVecShoot;
+        if (obj.secVecShoot != NULL){
+            secVecShoot_ = new double[dxux];
+            std::copy(obj.secVecShoot,obj.secVecShoot+obj.dxux,secVecShoot_);
+            secVecShoot = secVecShoot_;
+        }
+        else {
+            secVecShoot = NULL;
+        }
+
+        /* secVecPath */
+        if (secVecPath != NULL)
+            delete [] secVecPath;
+        if (obj.secVecPath != NULL){
+            secVecPath_ = new double[dpc];
+            std::copy(obj.secVecPath,obj.secVecPath+obj.dpc,secVecPath_);
+            secVecPath = secVecPath_;
+        }
+        else {  
+            secVecPath = NULL;
+        }
+
+        /* freeVars */
+        if (freeVars != NULL)
+            delete [] freeVars;
+        if (obj.freeVars != NULL){
+            freeVars_ = new int[dZ];
+            std::copy(obj.freeVars,obj.freeVars+obj.dZ,freeVars_);
+            freeVars = freeVars_;
+        }
+        else {
+            freeVars = NULL;
+        }
+
+        /* indFreeVars */
+        if (indFreeVars != NULL)
+            delete [] indFreeVars;
+        if (obj.indFreeVars != NULL){
+            indFreeVars_ = new int[dZ];
+            std::copy(obj.indFreeVars,obj.indFreeVars+obj.dZ,indFreeVars_);
+            indFreeVars = indFreeVars_;
+        }
+        else {
+            indFreeVars = NULL;
+        }
+
+        /* varStatus */
+        if (varStatus != NULL)
+            delete [] varStatus;
+        if (obj.varStatus != NULL){
+            varStatus_ = new int[dZ];
+            std::copy(obj.varStatus,obj.varStatus+obj.dZ,varStatus_);
+            varStatus = varStatus_;
+        }
+        else {
+            varStatus = NULL;
+        }
+
+        /* ivarFreeState */
+        if (ivarFreeState != NULL)
+            delete [] ivarFreeState;
+        if (obj.ivarFreeState != NULL){
+            ivarFreeState_ = new int[Ns*dx];
+            std::copy(obj.ivarFreeState,obj.ivarFreeState+obj.Ns*obj.dx,ivarFreeState_);   
+            ivarFreeState = ivarFreeState_;
+        }
+        else {
+            ivarFreeState = NULL;
+        }
+
+        /* ivarFreeInput */
+        if (ivarFreeInput != NULL)
+            delete [] ivarFreeInput;
+        if (obj.ivarFreeInput != NULL){
+            ivarFreeInput_ = new int[Ns_*du];
+            std::copy(obj.ivarFreeInput,obj.ivarFreeInput+obj.Ns_*obj.du,ivarFreeInput_);   
+            ivarFreeInput = ivarFreeInput_;
+        }
+        else {
+            ivarFreeInput = NULL;
+        }
+
+        /* ivarFreeSlack */
+        if (ivarFreeSlack != NULL)
+            delete [] ivarFreeSlack;
+        if (obj.ivarFreeSlack != NULL){
+            ivarFreeSlack_ = new int[Ns_*dpc];
+            std::copy(obj.ivarFreeSlack,obj.ivarFreeSlack+obj.Ns_*obj.dpc,ivarFreeSlack_);   
+            ivarFreeSlack = ivarFreeSlack_;
+        }
+        else {
+            ivarFreeSlack = NULL;
+        }
+
+        /* ivarFreeGroupShoot */
+        if (ivarFreeGroupShoot != NULL)
+            delete [] ivarFreeGroupShoot;
+        if (obj.ivarFreeGroupShoot != NULL){
+            ivarFreeGroupShoot_ = new int[Ns_*dxux];
+            std::copy(obj.ivarFreeGroupShoot,obj.ivarFreeGroupShoot+obj.Ns_*obj.dxux,ivarFreeGroupShoot_);   
+            ivarFreeGroupShoot = ivarFreeGroupShoot_;
+        }
+        else {
+            ivarFreeGroupShoot = NULL;
+        }
+
+        /* nfreeState */
+        if (nfreeState != NULL)
+            delete [] nfreeState;
+        if (obj.nfreeState != NULL){
+            nfreeState_ = new int[Ns];   
+            std::copy(obj.nfreeState,obj.nfreeState+obj.Ns,nfreeState_);
+            nfreeState = nfreeState_;
+        }
+        else {
+            nfreeState = NULL;
+        }
+
+        /* nfreeInput */
+        if (nfreeInput != NULL)
+            delete [] nfreeInput;
+        if (obj.nfreeInput != NULL){
+            nfreeInput_ = new int[Ns_];   
+            std::copy(obj.nfreeInput,obj.nfreeInput+obj.Ns_,nfreeInput_);
+            nfreeInput = nfreeInput_;
+        }
+        else {
+            nfreeInput = NULL;
+        }
+
+        /* nfreeSlack */
+        if (nfreeSlack != NULL)
+            delete [] nfreeSlack;
+        if (obj.nfreeSlack != NULL){
+            nfreeSlack_ = new int[Ns_];   
+            std::copy(obj.nfreeSlack,obj.nfreeSlack+obj.Ns_,nfreeSlack_);
+            nfreeSlack = nfreeSlack_;
+        }
+        else {
+            nfreeSlack = NULL;
+        }
+
+        /* nfreeGroupShoot */
+        if (nfreeGroupShoot != NULL)
+            delete [] nfreeGroupShoot;
+        if (obj.nfreeGroupShoot != NULL){
+            nfreeGroupShoot_ = new int[Ns_];   
+            std::copy(obj.nfreeGroupShoot,obj.nfreeGroupShoot+obj.Ns_,nfreeGroupShoot_);
+            nfreeGroupShoot = nfreeGroupShoot_;
+        }
+        else {
+            nfreeGroupShoot = NULL;
+        }
+    }
+
+    return *this;
+}
+
+/**
+* Initialize members
+*/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::init(){
+
+	int i,n,ibgx,indx,ibgu,indu;
+	double *xmin,*xmax,*umin,*umax;
+    double *zl,*zu,*zzM;
+    double *hp,*hs,*hhs,*hhp;
+
+    /* Initialize shooter */
+    shooter.init();
+    shooter.displayShootingParameters();
+
+    /* Initialize dimensions */
+    Ns_ = shooter.getNs_();
+    Ns = shooter.getNs();
+	dZshoot = shooter.getDprimShoot();
+    dZshootBL = dZshoot*SZDBL;
+	dZpath = shooter.getDprimPath();
+    dZpathBL = dZpath*SZDBL;
+    dZ = shooter.getDprim();
+    dZBL = dZ*SZDBL;
+    dZNT = dZ*SZINT;
+    dL = shooter.getDdua();
+    dLBL = dL*SZDBL;
+    du = shooter.getDu();
+    dubl = du*SZDBL;
+	dx = shooter.getDx();
+    dxbl = dx*SZDBL;
+	dxu = dx+du;
+    dxux = dxu+dx;
+    dpc = shooter.getDpc();
+    dGshoot = Ns_*dxux;
+    dGshootBL = dGshoot*SZDBL;
+    dGshootNT = dGshoot*SZINT;
+    dGpath = Ns_*dpc;
+    dGpathBL = dGpath*SZDBL;
+    dGpathNT = dGpath*SZINT;
+    dhS = dxux*dxux;
+    dhP = dpc*dpc;
+    dHshoot = Ns_*dhS;
+    dHpath = Ns_*dhP;
+
+    /* Allocate primal optimizer */
+    if (z != NULL)
+        delete [] z;
+    z = new double[dZ];
+    memset(z,0,dZBL);
+
+	/* Allocate candidate for next iterate */
+    if (zS != NULL)
+        delete [] zS;
+    zS = new double[dZ];
+    memset(zS,0,dZBL);
+    
+    /* Allocate difference between iterates */
+    if (negstp != NULL)
+        delete [] negstp;
+    negstp = new double[dZ];
+    memset(negstp,0,dZBL);
+
+	/* Allocate dual optimizer */
+    if (mu != NULL)
+        delete [] mu;
+    mu = new double[dL];
+    
+    /* Allocate equality constraints */
+    if (econ != NULL)
+        delete [] econ;
+    econ = new double[dL];
+    
+    /* Allocate optimal input */
+    if (uopt != NULL)
+        delete [] uopt;
+    uopt = new double[du];
+    
+    /* Allocate primal bounds (fixed and varying) */
+    if (zmin != NULL)
+        delete [] zmin;
+    zmin = new double[dZ];
+
+    if (zmax != NULL)
+        delete [] zmax;
+    zmax = new double[dZ];
+    
+    /* Initialize bounds on slacks for path-constraints */    
+    memset(zmin+dZshoot,0,dZpath*SZDBL);
+    zzM = zmax+dZshoot;
+    while (zzM != zmax+dZ)
+        *zzM++ = POSINF;
+
+    /* Initialize bounds zmin & zmax */
+	umin = shooter.getUmin();	
+	umax = shooter.getUmax();
+	xmin = shooter.getXmin();
+	xmax = shooter.getXmax();
+	    
+	zl = zmin;
+    zu = zmax;    
+    for (n=0;n<Ns_;++n){
+    	std::copy(xmin,xmin+dx,zl);
+    	std::copy(xmax,xmax+dx,zu);
+    	zl += dx;
+    	zu += dx;
+    	std::copy(umin,umin+du,zl);
+    	std::copy(umax,umax+du,zu);
+    	zl += du;
+    	zu += du;
+    }
+    std::copy(xmin,xmin+dx,zl);
+	std::copy(xmax,xmax+dx,zu);    
+
+    /* Initialize AL gradients */
+    if (gAL != NULL)
+        delete [] gAL;
+    gAL = new double[dZ];
+
+    gALpath = gAL+dZshoot;
+
+    if (gALpathS != NULL)
+        delete [] gALpathS;
+    gALpathS = new double[dGpath];
+    
+    if (gALshoot != NULL)
+        delete [] gALshoot;
+    gALshoot = new double[dGshoot];
+
+    if (gALshootS != NULL)
+        delete [] gALshootS;
+    gALshootS = new double[dGshoot];
+    
+    /* Initialize differences of AL gradients */
+    if (dffGshoot != NULL)
+        delete [] dffGshoot;
+    dffGshoot = new double[dGshoot];
+
+    if (dffGpath != NULL)
+        delete [] dffGpath;
+    dffGpath = new double[dGpath];
+    
+    /* Initialize AL hessian estimates (diagonal scaling matrices for every stage) */
+    if (hALshoot != NULL)
+        delete [] hALshoot;
+    hALshoot = new double[dHshoot];
+    memset(hALshoot,0,dHshoot*SZDBL);
+    hs = hALshoot;
+    for (n=0;n<Ns_;++n){
+        hhs = hs;
+        for (i=0;i<dxux;++i){
+            *hhs = sr_shoot_ini;
+            hhs += dxux+1;
+        }
+        hs += dhS;
+    }
+
+    if (hALpath != NULL)
+        delete [] hALpath;
+    hALpath = new double[dHpath];
+    memset(hALpath,0,dHpath*SZDBL);
+    hp = hALpath;
+    for (n=0;n<Ns_;++n){
+        hhp = hp;
+        for (i=0;i<dpc;++i){
+            *hhp = sr_path_ini;
+            hhp += dpc+1;
+        }
+        hp += dhP;
+    }
+
+    /* Initialize reduced hessian approximation */
+    if (hALshootRed != NULL)
+        delete [] hALshootRed;
+    hALshootRed = new double[dHshoot];
+
+    if (hALpathRed != NULL)
+        delete [] hALpathRed;
+    hALpathRed = new double[dHpath];
+
+    /* Initialize prdHss */
+    if (prdHss != NULL)
+        delete [] prdHss;
+    prdHss = new double[dZ];
+    memset(prdHss,0,dZBL);
+
+    /* Allocate secant vectors */
+    if (secVecShoot != NULL)
+        delete [] secVecShoot;
+    secVecShoot = new double[dxux];
+
+    if (secVecPath != NULL)
+        delete [] secVecPath;
+    secVecPath = new double[dpc];
+
+    /* Initialize vector of free/active variables */
+    if (freeVars != NULL)
+        delete [] freeVars;
+    freeVars = new int[dZ];
+    memset(freeVars,0,dZNT);
+
+    /* Initialize vector of indices of free/active variables */
+    if (indFreeVars != NULL)
+        delete [] indFreeVars;
+    indFreeVars = new int[dZ];
+    for (i=0;i<dZ;++i)
+        indFreeVars[i] = -1;
+
+    /* Initialize status vector (-1: var fixed to lower bound, 0: var free, 1: var fixed to upper bound)*/
+    if (varStatus != NULL)
+        delete [] varStatus;
+    varStatus = new int[dZ];
+    memset(varStatus,0,dZNT);
+
+    /* Initialize arrays of free variables per state, input, slack and shooting group */
+    if (ivarFreeState != NULL)
+        delete [] ivarFreeState;
+    ivarFreeState = new int[Ns*dx];
+    for (i=0;i<dx*Ns;++i)
+        ivarFreeState[i] = -1;
+
+    if (ivarFreeInput != NULL)
+        delete [] ivarFreeInput;
+    ivarFreeInput = new int[Ns_*du]; 
+    for (i=0;i<du*Ns_;++i)
+        ivarFreeInput[i] = -1;
+
+    if (ivarFreeSlack != NULL)
+        delete [] ivarFreeSlack;
+    ivarFreeSlack = new int[Ns_*dpc];
+    for (i=0;i<dpc*Ns_;++i)
+        ivarFreeSlack[i] = -1;
+
+    if (ivarFreeGroupShoot != NULL)
+        delete [] ivarFreeGroupShoot;
+    ivarFreeGroupShoot = new int[Ns_*dxux];
+    for (i=0;i<dxux*Ns_;++i)
+        ivarFreeGroupShoot[i] = -1;
+
+    if (nfreeState != NULL)
+        delete [] nfreeState;
+    nfreeState = new int[Ns];
+    for (i=0;i<Ns;++i)
+        nfreeState[i] = -1;
+
+    if (nfreeInput != NULL)
+        delete [] nfreeInput;
+    nfreeInput = new int[Ns_];
+    for (i=0;i<Ns_;++i)
+        nfreeInput[i] = -1;
+
+    if (nfreeSlack != NULL)
+        delete [] nfreeSlack;
+    nfreeSlack = new int[Ns_];
+    for (i=0;i<Ns_;++i)
+        nfreeSlack[i] = -1;
+
+    if (nfreeGroupShoot != NULL)
+        delete [] nfreeGroupShoot;
+    nfreeGroupShoot = new int[Ns_];
+    for (i=0;i<Ns_;++i)
+        nfreeGroupShoot[i] = -1;
+
+    /**
+    ** Initialize local quadratic model qmod 
+    **/
+    qmod.setDimensions(dZ,dZshoot,dxu,dxux,dpc);
+    qmod.setNumberShoots(Ns_);
+	qmod.setIterate(z);
+    qmod.setCauchy(zS);
+	qmod.setCandidate(zS);
+	qmod.setGradient(gAL);	
+	qmod.setHessianShoot(hALshoot);
+	qmod.setHessianPath(hALpath);
+    qmod.setProductHessian(prdHss);
+
+    /**
+    ** Initialize pointers for shooter, activDetector, precSubRefiner and precProjRefiner 
+    **/
+    /** Shooter initialization (members must have been allocated in Simulator) */
+    shooter.setPrimal(z);
+    shooter.setCandidate(zS);
+    shooter.setDual(mu);
+    shooter.setEcon(econ);
+    shooter.setGradient(gAL);
+    shooter.setGradientShooting(gALshoot);
+    shooter.setGradientShootingCandidate(gALshootS);
+    shooter.setGradientPath(gALpath);
+    shooter.setGradientPathCandidate(gALpathS);
+    shooter.setDiffGradientPath(dffGpath);
+#if REFIN_PCG_RES
+    /** Initialization of preconditoned subspace refiner */
+    precSubRefiner.setQuadraticModel(qmod);
+    precSubRefiner.setDimension(dZ);
+    precSubRefiner.setDimensionShoot(dx,du,dZshoot,dHshoot,dhS,dGshoot);
+    precSubRefiner.setDimensionPath(dpc,dZpath,dHpath,dhP,dGpath);
+    precSubRefiner.setGradient(gAL);
+    precSubRefiner.setProductHessian(prdHss);
+    precSubRefiner.setHessians(hALshoot,hALpath);
+    precSubRefiner.setReducedHessians(hALshootRed,hALpathRed);
+    precSubRefiner.setIterate(z);
+    precSubRefiner.setCandidate(zS);
+    precSubRefiner.setNLPbounds(zmin,zmax);
+    precSubRefiner.setNumIntervals(shooter.getNs_());
+    precSubRefiner.setRegCoefPrec(pr_reg_coef);
+    precSubRefiner.setFreeVars(freeVars);
+    precSubRefiner.setIndFreeVars(indFreeVars);
+    precSubRefiner.setVarStatus(varStatus);
+    precSubRefiner.setIndexFreeVars(ivarFreeState,ivarFreeInput,ivarFreeSlack,ivarFreeGroupShoot);
+    precSubRefiner.setNumberFreeVars(nfreeState,nfreeInput,nfreeSlack,nfreeGroupShoot);
+    precSubRefiner.init();
+#endif
+#if REFIN_MOR_TOR
+    /** Initialize preconditioned projected subspace refiner */
+    precProjRefiner.setQuadraticModel(qmod);
+    precProjRefiner.setDimension(dZ);
+    precProjRefiner.setDimensionShoot(dx,du,dZshoot,dHshoot,dhS,dGshoot);
+    precProjRefiner.setDimensionPath(dpc,dZpath,dHpath,dhP,dGpath);
+    precProjRefiner.setGradient(gAL);
+    precProjRefiner.setProductHessian(prdHss);
+    precProjRefiner.setHessians(hALshoot,hALpath);
+    precProjRefiner.setReducedHessians(hALshootRed,hALpathRed);
+    precProjRefiner.setIterate(z);
+    precProjRefiner.setMinorIterate(zS);
+    precProjRefiner.setNLPbounds(zmin,zmax);
+    precProjRefiner.setNumIntervals(shooter.getNs_());
+    precProjRefiner.setRegCoefPrec(pr_reg_coef);
+    precProjRefiner.setFreeVars(freeVars);
+    precProjRefiner.setIndFreeVars(indFreeVars);
+    precProjRefiner.setVarStatus(varStatus);
+    precProjRefiner.setIndexFreeVars(ivarFreeState,ivarFreeInput,ivarFreeSlack,ivarFreeGroupShoot);
+    precProjRefiner.setNumberFreeVars(nfreeState,nfreeInput,nfreeSlack,nfreeGroupShoot);
+    precProjRefiner.init();
+#endif
+    /** Activity detector initialization */
+    activDetector.setQuadraticModel(qmod);
+    activDetector.setNs_(Ns_);
+    activDetector.setDimensions(dZ,dZshoot,dGshoot);
+    activDetector.setStateDimension(dx);
+    activDetector.setInputDimension(du);
+    activDetector.setGroupDimensions(dxu,dxux,dpc);
+    activDetector.setIterate(z);
+    activDetector.setCauchy(zS);
+    activDetector.setGradient(gAL);
+    activDetector.setProductHessian(prdHss);
+    activDetector.setNLPbounds(zmin,zmax);
+#if REFIN_PCG_RES
+    activDetector.setReducedResidual(precSubRefiner.getReducedResidual());
+#endif
+#if REFIN_MOR_TOR
+    activDetector.setReducedResidual(precProjRefiner.getReducedResidual());
+#endif
+    activDetector.setFreeVars(freeVars);
+    activDetector.setIndFreeVars(indFreeVars);
+    activDetector.setVarStatus(varStatus);
+    activDetector.setIndexFreeVars(ivarFreeState,ivarFreeInput,ivarFreeSlack,ivarFreeGroupShoot);
+    activDetector.setNumberFreeVars(nfreeState,nfreeInput,nfreeSlack,nfreeGroupShoot);
+    activDetector.allocateDebug();
+}
+
+/**
+** Display members: primal optimizer z, dual optimizer mu,...
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::displayMembers(){
+
+    int i;
+
+    std::cout<<"Trust-region solver: z="<<std::endl;
+    for (i=0;i<dZ;++i)
+        std::cout<<z[i]<<std::endl;
+
+    std::cout<<"Trust-region solver: zS="<<std::endl;
+    for (i=0;i<dZ;++i)
+        std::cout<<zS[i]<<std::endl;
+
+    std::cout<<"Trust-region solver: econ="<<std::endl;
+    for (i=0;i<dL;++i)
+        std::cout<<econ[i]<<std::endl;
+
+    std::cout<<"Trust-region solver: mu="<<std::endl;
+    for (i=0;i<dL;++i)
+        std::cout<<mu[i]<<std::endl;
+
+    std::cout<<"Trust-region solver: gAL="<<std::endl;
+    for (i=0;i<dZ;++i)
+        std::cout<<gAL[i]<<std::endl;
+}
+
+/**
+** Displays candidate point zS 
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::displayCandidate(){
+
+    int i;
+
+    std::cout<<"Candidate zS= "<<std::endl;
+    for (i=0;i<dZ;++i)
+        std::cout<<zS[i]<<std::endl;
+}
+
+/** 
+** Displays primal iterate z
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::displayIterate(){
+
+    int i;
+
+    std::cout<<"Iterate z= "<<std::endl;
+    for (i=0;i<dZ;++i)
+        std::cout<<z[i]<<std::endl;
+}
+
+/**
+** Cold-start primal-dual optimizer
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::coldStartPrimalDual(){
+    
+//    std::cout<<"00000000 >> COLD-START"<<std::endl;
+    memset(z,0,dZBL);
+    memset(zS,0,dZBL);
+    memset(mu,0,dLBL);
+}
+
+/**
+** Shift primal & dual variables in an NMPC-like fashion
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::shiftPrimalDual(){
+    
+//    int i;
+
+//    std::cout<<"Primal before shift:"<<std::endl;
+//    for (i=0;i<dZ;++i)
+//        std::cout<<z[i]<<std::endl;
+
+    std::cout<<"Shift primal optimizer."<<std::endl;  
+    /* Shift shooting-part of primal sequence */
+    std::copy(z+dxu,z+dZshoot,z); 
+    /* Shift slacks-part of primal sequence */  
+    std::copy(z+dZshoot+dpc,z+dZ,z+dZshoot);
+  
+//    std::cout<<"Primal after shift:"<<std::endl;
+//    for (i=0;i<dZ;++i)
+//        std::cout<<z[i]<<std::endl;
+
+    std::cout<<"Shift dual optimizer."<<std::endl;  
+    /* Shift shooting-part of dual sequence */
+    std::copy(mu+dx,mu+dx+dLshoot,mu);
+    /* Shift slacks-part of dual sequence */
+    std::copy(mu+dx+dLshoot+dpc,mu+dL,mu+dx+dLshoot);
+}
+
+/**
+** Set initial hessian approximations
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::initHessianApprox(){
+
+    int i,n;
+    double *hs,*hhs,*hp,*hhp;
+
+    /* Set AL hessian of shooting part to diagonal scaling matrix */
+    memset(hALshoot,0,dHshoot*SZDBL);
+    hs = hALshoot;
+    for (n=0;n<Ns_;++n){
+        hhs = hs;
+        for (i=0;i<dxux;++i){
+            *hhs = sr_shoot_ini;
+//            *hhs = halfRhoIni;
+            hhs += dxux+1;
+        }
+        hs += dhS;
+    }
+#if DPC
+    /* Set AL hessian of slacks part to diagonal scaling matrix */
+    memset(hALpath,0,dHpath*SZDBL);
+    hp = hALpath;
+    for (n=0;n<Ns_;++n){
+        hhp = hp;
+        for (i=0;i<dpc;++i){
+            *hhp = sr_path_ini;
+//            *hhp = halfRhoIni;
+            hhp += dpc+1;
+        }
+        hp += dhP;
+    }
+#endif    
+}
+
+/**
+** Evaluate primal KKT satisfaction ||P(x-g(x))-x||
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::evalKKTprim(){
+
+	int k;
+    double dd,az,al,au,ag;
+
+    kkt2 = 0.;
+    for (k=0;k<dZ;++k){
+        az = *(z+k);
+        ag = *(gAL+k);
+        al = *(zmin+k);
+        au = *(zmax+k);
+        dd = PROJ(az-ag,al,au)-az;
+        kkt2 += dd*dd;
+    /*    dd = az-ag;
+        if (dd>au){
+            dd = au-az;
+            kkt2 += dd*dd;
+            continue;
+        }
+        if (dd<al){
+            dd = al-az;
+            kkt2 += dd*dd;
+            continue;
+        } 
+        dd -= az; */
+    }
+    kkt = sqrt(kkt2);
+}
+
+/** 
+** Evaluate 2-norm of equality constraints
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::evalEconNorm(){
+
+    double aux,*e,*end;
+
+    e = econ;
+    nec2 = 0.;
+    while (e != econ+dL){
+        aux = *e++; 
+        nec2 += aux*aux;
+    }
+    nec = sqrt(nec2);
+}    
+
+/**
+** Compute AL gradient at current primal-dual iterate and initial penalty parameter
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::evalALgradient(){
+
+    double val;
+    
+    std::cout<<"halfRhoIni="<<halfRhoIni<<std::endl;
+    val = shooter.shootStatesFromIterate(halfRhoIni);
+    shooter.shootAdjointsFromIterate();
+}
+
+/**
+** Assemble reduced hessian approximation in a blockwise manner
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::assembleReducedHessian(){
+
+    int i,j,n,nfree,irw;
+    int *nfgS,*nfP,*ivfgS,*ivfP;
+    double *hs,*hp,*hSr,*hPr;
+
+    nfgS = nfreeGroupShoot;
+    ivfgS = ivarFreeGroupShoot;
+    hs = hALshoot;
+    hSr = hALshootRed;
+#if DPC
+    nfP = nfreeSlack;
+    ivfP = ivarFreeSlack;
+    hp = hALpath;
+    hPr = hALpathRed;
+#endif
+    for (n=0;n<Ns_;++n){    
+        /* Shooting group */
+        nfree = *(nfgS+n);
+        for (i=0;i<nfree;++i){
+            irw = *(ivfgS+i)*dxux;
+            for (j=0;j<nfree;++j)
+                *hSr++ = *(hs+irw+*(ivfgS+j));
+        }
+        hs += dhS;
+        ivfgS += dxux;
+#if DPC
+        /* Slack group */
+        nfree = *(nfP+n);
+        for (i=0;i<nfree;++i){
+            irw = *(ivfP+i)*dpc;
+            for (j=0;j<nfree;++j)
+                *hPr++ = *(hp+irw+*(ivfP+j));
+        }   
+        hp += dhP;
+        ivfP += nfree;
+#endif
+    }
+}
+
+/**
+** Full primal loop: trust-region SR1 on augmented Lagrangian.
+** Stopped if KKT tolerance or max. # iterations hit. 
+** Input: - kkt tolerance from Lancelot's outer loop
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::primalFull(const double kktLan){
+
+	int it,i,j,n,testIterate,testDecrease;
+    double vmod,vcan,val,actRed,preRed;
+    double aux,ssz,alpha;
+    double auxz,auxg;
+    double srtio,srtio2,ndz,ndz2,ndg,ndg2;
+    double n2r,n2g,gts;
+    double *zz;
+	double *zm,*zM;
+	double *pz,*dz,*pzs;
+	double *dzs,*dzp,*ddzs,*ddzp,*dddzs,*dddzp;
+	double *dgp,*pgp,*pgpS,*ddgp,*dddgp;
+	double *dgs,*pgs,*pgsS,*ddgs,*dddgs;
+    double *g;
+	double *phs,*pphs,*php,*pphp;
+
+    /**
+    ** Initialization phase  
+    **/
+//    std::cout<<"Start shooting from iterate..."<<std::endl;
+    /* Evaluate augmented Lagrangian (objective+constraints) val */
+//    val = shooter.shootStatesFromIterate(halfRho);
+    /* Evaluate full gradient of augmented Lagrangian gAL & gALshoot */
+//    shooter.shootAdjointsFromIterate();
+    val = shooter.shootFromIterate(halfRho);
+//    std::cout<<"...done."<<std::endl;
+
+	/* Get KKT satisfaction */
+    evalKKTprim();
+
+    /* Initialize squared tolerance for refinement phase kkt2*min(0.01,...)
+    	- kkt for local superlinear convergence 
+    	- kkt2 for quadratic local convergence */
+#if QUAD_CV
+	cgTol2 = kkt2*MIN(0.01,kkt2);
+#endif
+#if SUPL_CV
+    cgTol2 = kkt2*MIN(0.01,kkt);
+#endif
+
+	/* Initialize trust-region radius: coef*kkt */
+	trRad = 0.1*kkt;
+
+    /**
+    ** Trust-region iterations 
+    **/
+	it = 0;
+    numPrimIt = 0;
+#if PRINT_TR
+    std::cout<<"val initial= "<<std::setprecision(10)<<val<<std::endl;
+    std::cout<<"kkt initial= "<<std::setprecision(10)<<kkt<<std::endl;
+#endif
+#if COUNT_CG
+    cumCG = 0;
+    cumRestart = 0;
+#endif 
+	/* Set initial step-size */
+    ssz = sini;
+    while (1){
+#if PRINT_TR
+        std::cout<<"T-R ITERATION "<<it+1<<std::endl;
+        std::cout<<"T-R radius= "<<trRad<<std::endl;
+        std::cout<<std::setprecision(5)<<"val= "<<val<<std::endl;
+        std::cout<<std::setprecision(5)<<"kkt= "<<kkt<<", kktLan= "<<kktLan<<std::endl;
+//        std::cout<<"Running step-size= "<<ssz<<std::endl;
+#endif
+        /* Check KKT and # iterations */
+        if ((kkt<=kktLan)||(it>=maxPit)){
+#if PRINT_TR
+            std::cout<<"Break after "<<it<<" iterations with kkt: "<<kkt<<std::endl;
+            std::cout<<"val final: "<<std::setprecision(10)<<val<<std::endl;
+            std::cout<<"Max. primal iters: "<<maxPit<<std::endl;
+#endif
+        	break;
+        }
+
+        if (trRad<=trRadTol){
+#if PRINT_TR
+            std::cout<<"Trust-region radius too small, abort."<<std::endl;
+            std::cout<<"trRad="<<trRad<<"<= trRadTol="<<trRadTol<<std::endl;
+#endif 
+            break;
+        }   
+
+		/**
+        ** Generate candidate for next iterate inside trust-region 
+        **/
+        /** 1. Cauchy phase */
+#if PRINT_TR
+        std::cout<<"Start Cauchy phase..."<<std::endl;
+#endif
+#if CCH_PRJ_SRCH
+        /* Use backtracking projected search */
+//        std::cout<<"!!!!! Initial step-size= !!!!"<<ssz<<std::endl;
+        activDetector.findProjectedSearch(&ssz,&vmod,&norIstp,trRad);
+        if (activDetector.getError()){
+//            activDetector.checkDescent();
+            errPrim = 1;
+            std::cout<<"ERROR IN CAUCHY, interruption at TR iter "<<it<<" with kkt="<<kkt<<std::endl;
+            return;
+        }
+//        ssz = sini;
+#endif
+#if CCH_INTER_EXTRA
+        /* Use interpolation-extrapolation strategy (see TRON) */
+        activDetector.findInterpExtrap(&ssz,&vmod,&norIstp,trRad);
+        if (activDetector.getError()){
+            errPrim = 1;
+            std::cout<<"ERROR IN CAUCHY, interruption at TR iter "<<it<<" with kkt="<<kkt<<std::endl;
+            return;
+        }
+//        ssz = sini;
+#endif
+
+        /** 2. Refinement phase */
+#if PRINT_TR            
+        std::cout<<"Start refinement phase..."<<std::endl;
+#endif
+#if REFIN_PCG_RES
+        /* PCG on active face at Cauchy point with restart if problem bound hit during search */
+        precSubRefiner.findCandidateRestart(cgTol2,trRad);
+#if COUNT_CG
+//        std::cout<<"Add "<<precSubRefiner.getCumCG()<<" PCG iters."<<std::endl;
+        cumCG += precSubRefiner.getCumCG();
+        cumRestart += precSubRefiner.getCumRestart();
+#endif
+#endif
+#if REFIN_MOR_TOR
+        /* Projected searches along directions generated by PCG */
+        precProjRefiner.setValMod(vmod);
+        precProjRefiner.findCandidate(cgTol2,trRad);
+#if COUNT_CG
+//        std::cout<<"Add "<<precProjRefiner.getCumCG()<<" PCG iters."<<std::endl;
+        cumCG += precProjRefiner.getCumCG();
+#endif
+#endif
+#if PRINT_TR
+        std::cout<<"TRUST-REGION: kkt satisf.= "<<kkt<<std::endl;
+#if COUNT_CG
+        std::cout<<"TRUST-REGION: cumul. CG iters= "<<cumCG<<std::endl;
+        std::cout<<"TRUST-REGION: cumul. CG restarts= "<<cumRestart<<std::endl;
+#endif
+#endif
+        /* Update negative difference z-zS, compute its infinity norm (and euclidean norm) */   
+        dz = negstp;
+        zz = z;
+        pzs = zS;
+        g = gAL;
+        norIstp = -1.;
+        gts = 0.;
+        while (zz != z+dZ){
+            aux = *zz++-*pzs++;
+            *dz++ = aux;
+            gts += *g++*aux;
+            norIstp = MAX(norIstp,ABS(aux));
+        }
+
+/*        if (norIstp<=diffTol){
+#if PRINT_TR
+            std::cout<<"Primal progress is too low, norIstp= "<<norIstp<<
+                       " after "<<it<<" iters, break with kkt= "<<kkt<<", nec= "<<nec<<std::endl;
+            std::cout<<"Max. primal iters: "<<maxPit<<std::endl;
+#endif
+            break;
+        } */
+
+        /* Evaluate model at candidate */
+#if REFIN_PCG_RES
+        vmod = val+qmod.evalModelCandidate();        
+#endif
+#if REFIN_MOR_TOR
+        vmod = val+precProjRefiner.getValMod();
+#endif       
+        /* Evaluate AL and separated gradients at candidate */
+        vcan = shooter.shootFromCandidate(halfRho);
+
+        /* Compute shooting AL gradient difference gALshoot(zS)-gALshoot(z) */
+        dgs = dffGshoot;
+        pgs = gALshoot; 
+        pgsS = gALshootS;
+        while (pgs != gALshoot+dGshoot)
+            *dgs++ = *pgsS++-*pgs++;
+#if DPC
+        /* Compute path-slacks AL gradient difference gALpath(zS)-gALpath(z) */
+        dgp = dffGpath;
+        pgp = gALpath;
+        pgpS = gALpathS;
+        while (pgp != gALpath+dGpath)
+        	*dgp++ = *pgpS++-*pgp++;
+#endif
+        /** 
+        ** SR1 updates on separated blocks 
+        **/
+        phs = hALshoot;    
+        dgs = dffGshoot;
+        dzs = negstp;
+#if DPC
+        php = hALpath;
+        dgp = dffGpath;
+        dzp = dzs+dZshoot;
+#endif
+        /* Loop over shooting blocks */
+        for (n=0;n<Ns_;++n){ 
+            /* On shooting AL hessian */
+            /* dgs<-dgs+phs*dzs and srtio<-(dgs+phs*dzs)'*dzs */
+            ddgs = dgs;
+            pphs = phs;
+            dddzs = dzs;
+            srtio = 0.;
+            ndz2 = 0.;
+            ndg2 = 0.;
+            for (i=0;i<dxux;++i){
+                aux = 0.;
+                ddzs = dzs;
+                for (j=0;j<dxux;++j){
+                    aux += *pphs**ddzs;
+                    ++pphs;
+                    ++ddzs;
+                }
+                *ddgs += aux;
+                auxz = *dddzs;
+                auxg = *ddgs;
+                srtio += auxg*auxz;
+                ndz2 += auxz*auxz;
+                ndg2 += auxg*auxg;
+                ++ddgs;
+                ++dddzs;
+            } 
+            srtio2 = srtio*srtio;
+            /* Check denominator and if zero skip update on current shooting-block */
+            /* !!!! Change SR1 update criterion !!!! */
+            //if (ABS(srtio)>=POSZER){
+            if (srtio2>sr_skip2*ndz2*ndg2){
+                /* SR1 update and increment phs and dgs pointers by dxux */
+                ddgs = dgs; 
+                for (i=0;i<dxux;++i){
+                    aux = *dgs;
+                    dddgs = ddgs;
+                    for (j=0;j<dxux;++j){
+                        *phs -= *dddgs*aux/srtio;
+                        ++phs;
+                        ++dddgs;
+                    }
+                    ++dgs; 
+                }
+                dzs += dxu;
+            }
+#if DPC
+            /* On path AL hessian */
+            /* dgp <- dgp + php*dzp and srtio <- (dgp + php*dzp)'*dzp */           
+            ddgp = dgp;        
+            pphp = php;   
+            dddzp = dzp;
+            srtio = 0.;
+            ndz2 = 0.;
+            ndg2 = 0.;
+            for (i=0;i<dpc;++i){
+                aux = 0.;
+                ddzp = dzp;
+                for (j=0;j<dpc;++j){
+                    aux += *pphp**ddzp;
+                    ++pphp;
+                    ++ddzp;
+                }
+                *ddgp += aux;
+                auxz = *dddzp;
+                auxg = *ddgp;
+                srtio += auxg*auxz;
+                ndz2 += auxz*auxz;
+                ndg2 += auxg*auxg; 
+                ++ddgp;
+                ++dddzp; 
+            } 
+            srtio2 = srtio*srtio;
+            /* Check denominator and if zero, skip update on current slack-block */
+            /* !!!! Change SR1 update criterion !!!! */
+        //    if (ABS(srtio)>=POSZER){
+            if (srtio2>sr_skip2*ndz2*ndg2){
+                /* SR1 update and increment php and dgp pointers by dpc */ 
+                ddgp = dgp;
+                for (i=0;i<dpc;++i){
+                    aux = *dgp;
+                    dddgp = ddgp;
+                    for (j=0;j<dpc;++j){
+                        *php -= *dddgp*aux/srtio;
+                        ++php;
+                        ++dddgp;
+                    }
+                    ++dgp;
+                }
+                dzp += dpc;
+            }
+#endif
+        }
+        /**
+        ** Trust-region management 
+        **/
+        /* Adjust trust region radius on first iteration */
+        if (it==0)
+            trRad = MIN(trRad,norIstp);
+        /* Coefficient for trust region update */
+        if (vcan-val+gts<=0.){
+            alpha = sig3;
+        }
+        else {
+            alpha = MAX(sig1,0.5*gts/(vcan-val+gts));
+        }
+        /* Actual objective reduction */
+        actRed = val-vcan;
+        /* Predicted objective reduction */
+        preRed = val-vmod;
+        /* Update trust-region radius */
+    //    testDecrease = 1*(actRed<=eta1*preRed)+2*(actRed>eta1*preRed)*(actRed<eta2*preRed)+3*(actRed>=eta2*preRed);
+        testDecrease = 1*(actRed<eta0*preRed)+2*(actRed>=eta0*preRed)*(actRed<eta1*preRed);
+        testDecrease += 3*(actRed>=eta1*preRed)*(actRed<eta2*preRed)+4*(actRed>=eta2*preRed);  
+        switch (testDecrease){
+            case 1:
+                /* Decrease trust-region radius */
+            //    trRad = 0.5*(sig2*trRad+sig1*MIN(norIstp,trRad));
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MIN(MAX(alpha,sig1)*norIstp,sig2*trRad);
+                break;
+            case 2:
+                /* Update trust region radius */
+            //    trRad *= 0.5*(sig3+sig1);
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MAX(sig1*trRad,MIN(alpha*norIstp,sig2*trRad));
+                break;
+            case 3:
+                /* Update trust region radius */
+            //    trRad *= 0.5*(1.0+sig3);
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MAX(sig1*trRad,MIN(alpha*norIstp,sig3*trRad));
+                break;
+            case 4:
+                /* Increase trust region radius */
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MAX(trRad,MIN(alpha*norIstp,sig3*trRad));
+                break;
+            default:  
+#if PRINT_TR    
+                std::cerr<<"PROBLEM IN TRUST RADIUS UPDATE, ABORT WITH KKT="<<kkt<<std::endl;
+                std::cout<<"actRed= "<<actRed<<std::endl;
+                std::cout<<"preRed= "<<preRed<<std::endl;
+                std::cout<<"testDecrease="<<testDecrease<<std::endl;
+#endif
+                break;
+        }     
+        /** 
+        ** Iteration successful: update iterate to candidate point 
+        **/
+        testIterate = 0*(actRed<=eta0*preRed)+1*(actRed>eta0*preRed);
+        if (testIterate){
+#if PRINT_TR
+            std::cout<<">>> SUCCESSFUL ITERATION <<<"<<std::endl;
+            std::cout<<"actRed= "<<actRed<<std::endl;
+            std::cout<<"preRed= "<<preRed<<std::endl;
+#endif
+            /* Update iterate to candidate point */
+            memcpy(z,zS,dZBL);
+            /* Update separated shooting Al gradients */
+            memcpy(gALshoot,gALshootS,dGshootBL);
+#if DPC
+            /* Update slack-path of full AL gradient */
+            memcpy(gALpath,gALpathS,dGpathBL);
+#endif
+            /* Build shooting part of full AL gradient at updated iterate */
+            memset(gAL,0,dZshootBL);
+            g = gAL;
+            pgs = gALshoot;
+            for (n=0;n<Ns_;++n){
+                for (i=0;i<dxux;++i)
+                    *(g+i) += *pgs++;
+                g += dxu;
+            }
+            /* Update kkt */
+            evalKKTprim();
+            /*  Update CG tolerance:
+              - sqrt(kkt2) for local superlinear convergence 
+              - kkt2 for quadratic local convergence */
+#if QUAD_CV
+            cgTol2 = kkt2*MIN(0.01,kkt2);    
+#endif
+#if SUPL_CV
+            cgTol2 = kkt2*MIN(0.01,kkt);
+#endif
+            /* Update vAL value */
+            val = vcan;
+        }
+        /* Go to next iteration */
+		++it;
+	}
+    numPrimIt = it;
+}
+
+/**
+** Real-time primal loop, truncated trust-region SR1
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::primalRealTime(){
+
+	int it,i,j,n,testIterate,testDecrease;
+    double vmod,vcan,val,actRed,preRed;
+    double aux,ssz,alpha;
+    double auxz,auxg;
+    double srtio,srtio2,ndz,ndz2,ndg,ndg2;
+    double n2r,n2g,gts;
+    double *zz;
+	double *zm,*zM;
+	double *pz,*dz,*pzs;
+	double *dzs,*dzp,*ddzs,*ddzp,*dddzs,*dddzp;
+	double *dgp,*pgp,*pgpS,*ddgp,*dddgp;
+	double *dgs,*pgs,*pgsS,*ddgs,*dddgs;
+    double *g;
+	double *phs,*pphs,*php,*pphp;
+
+    /**
+    ** Initialization phase  
+    **/
+	/* Compute augmented Lagrangian and its full gradient */
+    val = shooter.shootFromIterate(halfRho);
+
+	/* Get KKT satisfaction */
+    evalKKTprim();
+
+    /* Initialize squared tolerance for refinement phase kkt2*min(0.01,...)
+    	- kkt for local superlinear convergence 
+    	- kkt2 for quadratic local convergence */
+#if QUAD_CV
+	cgTol2 = kkt2*MIN(0.01,kkt2);
+#endif
+#if SUPL_CV
+    cgTol2 = kkt2*MIN(0.01,kkt);
+#endif
+
+	/* Initialize trust-region radius: coef*kkt */
+	trRad = 0.1*kkt;
+
+    /**
+    ** Trust-region iterations 
+    **/
+	it = 0;
+    numPrimIt = 0;
+#if PRINT_TR
+    std::cout<<"val initial= "<<std::setprecision(10)<<val<<std::endl;
+    std::cout<<"kkt initial= "<<std::setprecision(10)<<kkt<<std::endl;
+#endif
+#if COUNT_CG
+    cumCG = 0;
+    cumRestart = 0;
+#endif 
+	/* Set initial step-size */
+    ssz = sini;
+    while (1){
+#if PRINT_TR
+        std::cout<<"T-R ITERATION "<<it+1<<std::endl;
+        std::cout<<"T-R radius= "<<trRad<<std::endl;
+        std::cout<<std::setprecision(5)<<"val= "<<val<<std::endl;
+        std::cout<<std::setprecision(5)<<"kkt= "<<kkt<<", kktLan= "<<kktLan<<std::endl;
+//        std::cout<<"Running step-size= "<<ssz<<std::endl;
+#endif
+        /* Check KKT and # iterations */
+        if (it>=maxPit){
+#if PRINT_TR
+            std::cout<<"Break after "<<it<<" iterations with kkt: "<<kkt<<std::endl;
+            std::cout<<"val final: "<<std::setprecision(10)<<val<<std::endl;
+            std::cout<<"Max. primal iters: "<<maxPit<<std::endl;
+#endif
+        	break;
+        }
+
+        if (trRad<=trRadTol){
+#if PRINT_TR
+            std::cout<<"Trust-region radius too small, abort."<<std::endl;
+            std::cout<<"trRad="<<trRad<<"<= trRadTol="<<trRadTol<<std::endl;
+#endif 
+            break;
+        }   
+
+		/**
+        ** Generate candidate for next iterate inside trust-region 
+        **/
+        /** 1. Cauchy phase */
+#if PRINT_TR
+        std::cout<<"Start Cauchy phase..."<<std::endl;
+#endif
+#if CCH_PRJ_SRCH
+        /* Use backtracking projected search */
+//        std::cout<<"!!!!! Initial step-size= !!!!"<<ssz<<std::endl;
+        activDetector.findProjectedSearch(&ssz,&vmod,&norIstp,trRad);
+        if (activDetector.getError()){
+//            activDetector.checkDescent();
+            errPrim = 1;
+            std::cout<<"ERROR IN CAUCHY, interruption at TR iter "<<it<<" with kkt="<<kkt<<std::endl;
+            return;
+        }
+//        ssz = sini;
+#endif
+#if CCH_INTER_EXTRA
+        /* Use interpolation-extrapolation strategy (see TRON) */
+        activDetector.findInterpExtrap(&ssz,&vmod,&norIstp,trRad);
+        if (activDetector.getError()){
+            errPrim = 1;
+            std::cout<<"ERROR IN CAUCHY, interruption at TR iter "<<it<<" with kkt="<<kkt<<std::endl;
+            return;
+        }
+//        ssz = sini;
+#endif
+
+        /** 2. Refinement phase */
+#if PRINT_TR            
+        std::cout<<"Start refinement phase..."<<std::endl;
+#endif
+#if REFIN_PCG_RES
+        /* PCG on active face at Cauchy point with restart if problem bound hit during search */
+        precSubRefiner.findCandidateRestart(cgTol2,trRad);
+#if COUNT_CG
+//        std::cout<<"Add "<<precSubRefiner.getCumCG()<<" PCG iters."<<std::endl;
+        cumCG += precSubRefiner.getCumCG();
+        cumRestart += precSubRefiner.getCumRestart();
+#endif
+#endif
+#if REFIN_MOR_TOR
+        /* Projected searches along directions generated by PCG */
+        precProjRefiner.setValMod(vmod);
+        precProjRefiner.findCandidate(cgTol2,trRad);
+#if COUNT_CG
+//        std::cout<<"Add "<<precProjRefiner.getCumCG()<<" PCG iters."<<std::endl;
+        cumCG += precProjRefiner.getCumCG();
+#endif
+#endif
+#if PRINT_TR
+        std::cout<<"TRUST-REGION: kkt satisf.= "<<kkt<<std::endl;
+#if COUNT_CG
+        std::cout<<"TRUST-REGION: cumul. CG iters= "<<cumCG<<std::endl;
+        std::cout<<"TRUST-REGION: cumul. CG restarts= "<<cumRestart<<std::endl;
+#endif
+#endif
+        /* Update negative difference z-zS, compute its infinity norm (and euclidean norm) */   
+        dz = negstp;
+        zz = z;
+        pzs = zS;
+        g = gAL;
+        norIstp = -1.;
+        gts = 0.;
+        while (zz != z+dZ){
+            aux = *zz++-*pzs++;
+            *dz++ = aux;
+            gts += *g++*aux;
+            norIstp = MAX(norIstp,ABS(aux));
+        }
+
+        /* Evaluate model at candidate */
+#if REFIN_PCG_RES
+        vmod = val+qmod.evalModelCandidate();        
+#endif
+#if REFIN_MOR_TOR
+        vmod = val+precProjRefiner.getValMod();
+#endif       
+        /* Evaluate AL and separated gradients at candidate */
+        vcan = shooter.shootFromCandidate(halfRho);
+
+        /* Compute shooting AL gradient difference gALshoot(zS)-gALshoot(z) */
+        dgs = dffGshoot;
+        pgs = gALshoot; 
+        pgsS = gALshootS;
+        while (pgs != gALshoot+dGshoot)
+            *dgs++ = *pgsS++-*pgs++;
+#if DPC
+        /* Compute path-slacks AL gradient difference gALpath(zS)-gALpath(z) */
+        dgp = dffGpath;
+        pgp = gALpath;
+        pgpS = gALpathS;
+        while (pgp != gALpath+dGpath)
+        	*dgp++ = *pgpS++-*pgp++;
+#endif
+        /** 
+        ** SR1 updates on separated blocks 
+        **/
+        phs = hALshoot;    
+        dgs = dffGshoot;
+        dzs = negstp;
+#if DPC
+        php = hALpath;
+        dgp = dffGpath;
+        dzp = dzs+dZshoot;
+#endif
+        /* Loop over shooting blocks */
+        for (n=0;n<Ns_;++n){ 
+            /* On shooting AL hessian */
+            /* dgs<-dgs+phs*dzs and srtio<-(dgs+phs*dzs)'*dzs */
+            ddgs = dgs;
+            pphs = phs;
+            dddzs = dzs;
+            srtio = 0.;
+            ndz2 = 0.;
+            ndg2 = 0.;
+            for (i=0;i<dxux;++i){
+                aux = 0.;
+                ddzs = dzs;
+                for (j=0;j<dxux;++j){
+                    aux += *pphs**ddzs;
+                    ++pphs;
+                    ++ddzs;
+                }
+                *ddgs += aux;
+                auxz = *dddzs;
+                auxg = *ddgs;
+                srtio += auxg*auxz;
+                ndz2 += auxz*auxz;
+                ndg2 += auxg*auxg;
+                ++ddgs;
+                ++dddzs;
+            } 
+            srtio2 = srtio*srtio;
+            /* Check denominator and if zero skip update on current shooting-block */
+            /* !!!! Change SR1 update criterion !!!! */
+            //if (ABS(srtio)>=POSZER){
+            if (srtio2>sr_skip2*ndz2*ndg2){
+                /* SR1 update and increment phs and dgs pointers by dxux */
+                ddgs = dgs; 
+                for (i=0;i<dxux;++i){
+                    aux = *dgs;
+                    dddgs = ddgs;
+                    for (j=0;j<dxux;++j){
+                        *phs -= *dddgs*aux/srtio;
+                        ++phs;
+                        ++dddgs;
+                    }
+                    ++dgs; 
+                }
+                dzs += dxu;
+            }
+#if DPC
+            /* On path AL hessian */
+            /* dgp <- dgp + php*dzp and srtio <- (dgp + php*dzp)'*dzp */           
+            ddgp = dgp;        
+            pphp = php;   
+            dddzp = dzp;
+            srtio = 0.;
+            ndz2 = 0.;
+            ndg2 = 0.;
+            for (i=0;i<dpc;++i){
+                aux = 0.;
+                ddzp = dzp;
+                for (j=0;j<dpc;++j){
+                    aux += *pphp**ddzp;
+                    ++pphp;
+                    ++ddzp;
+                }
+                *ddgp += aux;
+                auxz = *dddzp;
+                auxg = *ddgp;
+                srtio += auxg*auxz;
+                ndz2 += auxz*auxz;
+                ndg2 += auxg*auxg; 
+                ++ddgp;
+                ++dddzp; 
+            } 
+            srtio2 = srtio*srtio;
+            /* Check denominator and if zero, skip update on current slack-block */
+            /* !!!! Change SR1 update criterion !!!! */
+        //    if (ABS(srtio)>=POSZER){
+            if (srtio2>sr_skip2*ndz2*ndg2){
+                /* SR1 update and increment php and dgp pointers by dpc */ 
+                ddgp = dgp;
+                for (i=0;i<dpc;++i){
+                    aux = *dgp;
+                    dddgp = ddgp;
+                    for (j=0;j<dpc;++j){
+                        *php -= *dddgp*aux/srtio;
+                        ++php;
+                        ++dddgp;
+                    }
+                    ++dgp;
+                }
+                dzp += dpc;
+            }
+#endif
+        }
+        /**
+        ** Trust-region management 
+        **/
+        /* Adjust trust region radius on first iteration */
+        if (it==0)
+            trRad = MIN(trRad,norIstp);
+        /* Coefficient for trust region update */
+        if (vcan-val+gts<=0.){
+            alpha = sig3;
+        }
+        else {
+            alpha = MAX(sig1,0.5*gts/(vcan-val+gts));
+        }
+        /* Actual objective reduction */
+        actRed = val-vcan;
+        /* Predicted objective reduction */
+        preRed = val-vmod;
+        /* Update trust-region radius */
+    //    testDecrease = 1*(actRed<=eta1*preRed)+2*(actRed>eta1*preRed)*(actRed<eta2*preRed)+3*(actRed>=eta2*preRed);
+        testDecrease = 1*(actRed<eta0*preRed)+2*(actRed>=eta0*preRed)*(actRed<eta1*preRed);
+        testDecrease += 3*(actRed>=eta1*preRed)*(actRed<eta2*preRed)+4*(actRed>=eta2*preRed);  
+        switch (testDecrease){
+            case 1:
+                /* Decrease trust-region radius */
+            //    trRad = 0.5*(sig2*trRad+sig1*MIN(norIstp,trRad));
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MIN(MAX(alpha,sig1)*norIstp,sig2*trRad);
+                break;
+            case 2:
+                /* Update trust region radius */
+            //    trRad *= 0.5*(sig3+sig1);
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MAX(sig1*trRad,MIN(alpha*norIstp,sig2*trRad));
+                break;
+            case 3:
+                /* Update trust region radius */
+            //    trRad *= 0.5*(1.0+sig3);
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MAX(sig1*trRad,MIN(alpha*norIstp,sig3*trRad));
+                break;
+            case 4:
+                /* Increase trust region radius */
+            //    std::cout<<"nor2stp="<<nor2stp<<std::endl;
+            //    std::cout<<"alpha="<<alpha<<std::endl;
+                trRad = MAX(trRad,MIN(alpha*norIstp,sig3*trRad));
+                break;
+            default:  
+#if PRINT_TR    
+                std::cerr<<"PROBLEM IN TRUST RADIUS UPDATE, ABORT WITH KKT="<<kkt<<std::endl;
+                std::cout<<"actRed= "<<actRed<<std::endl;
+                std::cout<<"preRed= "<<preRed<<std::endl;
+                std::cout<<"testDecrease="<<testDecrease<<std::endl;
+#endif
+                break;
+        }     
+        /** 
+        ** Iteration successful: update iterate to candidate point 
+        **/
+        testIterate = 0*(actRed<=eta0*preRed)+1*(actRed>eta0*preRed);
+        if (testIterate){
+#if PRINT_TR
+            std::cout<<">>> SUCCESSFUL ITERATION <<<"<<std::endl;
+            std::cout<<"actRed= "<<actRed<<std::endl;
+            std::cout<<"preRed= "<<preRed<<std::endl;
+#endif
+            /* Update iterate to candidate point */
+            memcpy(z,zS,dZBL);
+            /* Update separated shooting Al gradients */
+            memcpy(gALshoot,gALshootS,dGshootBL);
+#if DPC
+            /* Update slack-path of full AL gradient */
+            memcpy(gALpath,gALpathS,dGpathBL);
+#endif
+            /* Build shooting part of full AL gradient at updated iterate */
+            memset(gAL,0,dZshootBL);
+            g = gAL;
+            pgs = gALshoot;
+            for (n=0;n<Ns_;++n){
+                for (i=0;i<dxux;++i)
+                    *(g+i) += *pgs++;
+                g += dxu;
+            }
+            /* Update kkt */
+            evalKKTprim();
+            /*  Update CG tolerance:
+              - sqrt(kkt2) for local superlinear convergence 
+              - kkt2 for quadratic local convergence */
+#if QUAD_CV
+            cgTol2 = kkt2*MIN(0.01,kkt2);    
+#endif
+#if SUPL_CV
+            cgTol2 = kkt2*MIN(0.01,kkt);
+#endif
+            /* Update vAL value */
+            val = vcan;
+        }
+        /* Go to next iteration */
+		++it;
+	}
+}
+
+/**************************************** Dual loops *******************************************/
+/**
+** Real-time dual loop (only one dual update)
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::solveRealTime(){
+
+    int i;
+    double *mm,*ee;
+
+#if JACO_PRE
+#if REFIN_PCG_RES
+    precSubRefiner.setRegCoefPrec(1.);
+#endif
+#if REFIN_MOR_TOR
+
+#endif
+#endif
+    /* Fixed number of primal iterations */
+    primalRealTime();
+    /* Evaluate squared 2-norm of equality constraints */
+    evalEconNorm();
+
+#if PRINT_DUA
+    std::cout<<"kkt= "<<kkt<<std::endl;
+    std::cout<<"nec= "<<nec<<std::endl;
+    std::cout<<numPrimIt<<" primal iterations."<<std::endl;
+#if COUNT_CG
+    std::cout<<cumCG<<" CG iters."<<std::endl;
+    std::cout<<cumRestart<<" CG restarts."<<std::endl;
+#endif
+#endif
+    /* One dual update */
+    mm = mu;
+    ee = econ;
+    while (mm != mu+dL)
+        *mm++ += 2*halfRho*(*ee++);
+    /* Extract optimal control input */
+    memcpy(uopt,z+dx,dubl);
+}
+
+/**
+** LANCELOT outer loop: adapt tolerance on primal optimality depending on constraints satisfaction
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::solveLancelot(){
+
+    int dit;
+    double *mm,*ee;
+    double ecTol,kktTol;
+    double rho;
+
+    halfRho = halfRhoIni;
+    /**
+    * Outer loop
+    */
+    ecTol = ecTolIni;
+    kktTol = kktTolIni;
+    globCG = 0;
+    globRestart = 0;
+    dit = 0;
+    while (1){
+        /* Stop if max. # iterations reached */
+        if (dit>=maxDit)
+            break;
+#if JACO_PRE
+#if REFIN_PCG_RES
+        precSubRefiner.setRegCoefPrec(1.);
+#endif
+#endif
+        /* Set initial SR1 hessian approximation */
+        initHessianApprox();
+        /* Primal iterations stopped when kkt satisfaction below kktTol */
+        primalFull(kktTol);
+        /* Evaluate squared 2-norm of equality constraints */
+        evalEconNorm();
+
+        globCG += cumCG;
+        globRestart += cumRestart;
+
+#if PRINT_DUA
+        std::cout<<"Outer iter "<<dit+1<<": kkt="<<kkt<<std::endl;
+        std::cout<<"Outer iter "<<dit+1<<": nec="<<nec<<std::endl;
+        std::cout<<"Outer iter "<<dit+1<<": "<<numPrimIt<<" primal iterations."<<std::endl;
+#if COUNT_CG
+        std::cout<<"Outer iter "<<dit+1<<": "<<cumCG<<" CG iters."<<std::endl;
+        std::cout<<"Outer iter "<<dit+1<<": "<<cumRestart<<" CG restarts."<<std::endl;
+#endif
+        std::cout<<"Outer iter "<<dit+1<<", ec tolerance: "<<ecTol<<std::endl;
+        std::cout<<"Outer iter "<<dit+1<<", kkt tolerance: "<<kktTol<<std::endl;
+#endif
+
+        /* If nan, abort */
+        if ((isnan(kkt))||(kkt>=1E5)||(isnan(nec))||(nec>=1E5)){
+            std::cout<<"norIstp= "<<norIstp<<std::endl;
+            std::cerr<<"Abort, kkt="<<kkt<<", nec= "<<nec<<std::endl;
+            displayIterate();
+            return;
+        }
+
+        /* Abort if error in primal loop */
+        if (errPrim) 
+            return;
+
+        /* Stop if absolute feasibility tolerance reached */
+        if (nec<=necTolAbs)
+            break;
+
+        /* Lancelot-like update */
+        if (nec<=ecTol){
+            rho = 2.*halfRho;
+            std::cout<<"Sufficiently feasible, update dual variable"<<std::endl;
+            /* First-order dual update, freeze penalty */
+            mm = mu;
+            ee = econ;
+            while (mm != mu+dL)
+                *mm++ += rho*(*ee++);
+            
+            /* Update tolerances */
+            ecTol /= pow(rho,0.9);
+            kktTol /= rho;
+        }
+        else {
+            std::cout<<"Not sufficiently feasible, increase penalty parameter"<<std::endl;
+            /* Increase penalty, freeze dual */
+            halfRho *= mulPen;
+            rho = 2.*halfRho;
+            /* Update tolerances */
+            ecTol = 0.1/pow(rho,0.1);
+            kktTol = 1./rho; 
+        }
+        /* Go to next outer iteration */
+        ++dit;
+    }
+    /* Extract optimal control input */
+    memcpy(uopt,z+dx,dubl);
+}
+
+/**
+** Full dual loop (classic augmented Lagrangian outer iterations)
+**/
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::solveFull(){
+
+    int dit;
+    double *mm,*ee;
+
+//    std::cout<<"sta solveFull"<<std::endl;
+
+    /* Set initial penalty parameter */
+    halfRho = halfRhoIni;
+
+    /* Set initial guess on primal optimizer */
+/*    xes = shooter.getXest();
+    zz = z;
+    for (n=0;n<Ns_;++n){
+        memcpy(zz,xes,dxbl);
+        zz += dxu;
+    } */
+
+    /**
+    ** Outer (dual) loop
+    **/
+    globCG = 0;
+    globRestart = 0;
+    dit = 0;
+    while (1){
+        /* Stop if max. # dual steps reached */
+        if (dit>=maxDit)
+            break;
+
+#if JACO_PRE
+#if REFIN_PCG_RES
+        precSubRefiner.setRegCoefPrec(1.);
+#endif
+#endif
+        /* Set initial SR1 approx. */
+        initHessianApprox();
+        /* Primal iterations */
+        primalFull(kktTolAbs);
+        /* Evaluate squared 2-norm of equality constraints */
+        evalEconNorm();
+
+        globCG += cumCG;
+        globRestart += cumRestart;
+#if PRINT_DUA
+        std::cout<<"Dual iter "<<dit+1<<": kkt="<<kkt<<std::endl;
+        std::cout<<"Dual iter "<<dit+1<<": nec="<<nec<<std::endl;
+        std::cout<<"Dual iter "<<dit+1<<": "<<numPrimIt<<" primal iterations."<<std::endl;
+#if COUNT_CG
+        std::cout<<"Dual iter "<<dit+1<<": "<<cumCG<<" CG iters."<<std::endl;
+        std::cout<<"Dual iter "<<dit+1<<": "<<cumRestart<<" CG restarts."<<std::endl;
+#endif
+#endif
+        /* Stop if feasibility tolerance reached */
+        if (nec<=necTolAbs)
+            break;
+        /* If nan, abort */
+        if ((isnan(kkt))||(kkt>=1E5)||(isnan(nec))||(nec>=1E5)){
+            std::cout<<"norIstp= "<<norIstp<<std::endl;
+            std::cerr<<"Abort, kkt="<<kkt<<", nec= "<<nec<<std::endl;
+            displayIterate();
+            return;
+        }
+        /* Dual update */
+        mm = mu;
+        ee = econ;
+        while (mm != mu+dL)
+            *mm++ += 2.*halfRho*(*ee++);
+        /* Increase penalty parameter */
+        halfRho *= mulPen;
+
+        ++dit;
+    }
+    /* Extract optimal control input */
+    memcpy(uopt,z+dx,dubl);
+}
+
+/**
+** For debugging 
+**/
+/* Display shooting part of AL hessian */
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::displayHalShoot(){
+
+    int n,i;
+    double *hal;
+
+    std::cout<<"hALshoot: "<<std::endl;    
+    hal = hALshoot;
+    for (n=0;n<Ns_;++n){
+        std::cout<<"Block "<<n<<std::endl;
+        for (i=0;i<dhS;++i){  
+            if (i%dxux == dxux-1){
+                std::cout<<*hal++<<std::endl;
+            }
+            else {
+                std::cout<<*hal++<<" ";
+            }
+        }
+    }
+
+}
+
+/* Read data from MAT files and store in z & mu */
+template <class dynT,class costT,class pconT,class mayerT> void NonlinOCPsolver<dynT,costT,pconT,mayerT>::readMATfiles(){
+
+    // TO BE IMPLEMENTED
+
+}

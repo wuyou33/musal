@@ -1,0 +1,1117 @@
+#include <iostream>
+#include <math.h>
+#include <string.h>
+#include <assert.h>
+
+#include "ProjectedRefiner.h"
+#include "defaultOptions.h"
+#include "macros.h"
+#include "userData.h"
+
+#if OSX
+#include <Accelerate/Accelerate.h>
+#endif
+
+#if LINUX
+extern "C" {
+#include <atlas/cblas.h>
+}
+#endif
+
+
+/**
+* Default constructor
+*/
+ProjectedRefiner::ProjectedRefiner(){
+
+	z = NULL;
+    zminor = NULL;
+    zwork = NULL;
+
+    gAL = NULL;
+    
+    prdHss = NULL;
+    prdHssWrk = NULL;
+
+    hALshoot = NULL;
+    hALpath = NULL;
+    hALshootRed = NULL;
+    hALpathRed = NULL;
+    
+    zmin = NULL;
+    zmax = NULL;
+
+    wRed = NULL; 
+    rRed = NULL; 
+    yRed = NULL; 
+    pRed = NULL; 
+   	xRed = NULL; 
+
+    freeVars = NULL;
+    indFreeVars = NULL;
+    varStatus = NULL;
+    ivarFreeState = NULL;
+    ivarFreeInput = NULL;
+    ivarFreeSlack = NULL;
+    ivarFreeGroupShoot = NULL;
+    nfreeState = NULL;
+    nfreeInput = NULL;
+    nfreeSlack = NULL;
+    nfreeGroupShoot = NULL;
+
+    activTol = ACTIV_TOL;
+    pr_reg_coef = PREC_REG_COEF;
+    bwd = BAND_WIDTH;
+
+    dZ = -1;
+    dZBL = -1;
+    
+    dZshoot = -1;
+    dZshootBL = -1;
+    
+    dZpath = -1;
+   	dZpathBL = -1;
+  
+    dHshoot = -1;
+    dHpath = -1;
+    
+    Ns_ = -1;
+    
+    dx = -1;
+    du = -1;
+    dxu = -1;
+    dxux = -1;
+    dpc = -1;
+    
+    dimRed = -1;
+    dimRedBL = -1;
+    dimRedShoot = -1;
+    dimRedPath = -1;
+
+    cumCG = -1;
+    pcgStatus = 0;
+
+    vmod = POSINF;
+
+    maxRefIter = -1;
+    maxItSrch = -1;
+}
+
+/**
+** Destructor 
+**/
+ProjectedRefiner::~ProjectedRefiner(){
+
+	if (wRed != NULL)
+    	delete [] wRed;
+
+    if (rRed != NULL)
+    	delete [] rRed;
+
+    if (yRed != NULL)
+    	delete [] yRed;
+    
+    if (pRed != NULL)
+    	delete [] pRed;
+    
+    if (xRed != NULL)
+    	delete [] xRed; 
+
+    if (zwork != NULL)
+        delete [] zwork;
+
+    if (prdHssWrk != NULL)
+        delete [] prdHssWrk;
+}
+
+/**
+** Copy constructor
+**/
+ProjectedRefiner::ProjectedRefiner(const ProjectedRefiner& obj) : qmod(obj.qmod),precon(obj.precon){
+    
+    dZ = obj.dZ;
+    dZBL = obj.dZBL;
+    
+    dZshoot = obj.dZshoot;
+   	dZshootBL = obj.dZshootBL;
+    dZpath = obj.dZpath;
+    dZpathBL = obj.dZpath;
+    
+    dHshoot = obj.dHshoot;
+    dHpath = obj.dHpath;
+    dhS = obj.dhS;
+    dhP = obj.dhP;
+    
+    Ns_ = obj.Ns_;
+    Ns_BL = obj.Ns_BL;
+    NsBL = obj.NsBL;
+    Ns_NT = obj.Ns_NT;
+    NsNT = obj.NsNT;
+    
+    dx = obj.dx;
+    du = obj.du;
+    dxu = obj.dxu;
+    dxux = obj.dxux;
+    dpc = obj.dpc;
+    
+    dimRed = obj.dimRed;
+    dimRedBL = obj.dimRed;
+    dimRedShoot = obj.dimRedShoot;
+    dimRedPath = obj.dimRedPath;
+
+    z = obj.z;
+    zminor = obj.zminor;
+
+    gAL = obj.gAL;
+    
+    prdHss = obj.prdHss;
+
+    hALshoot = obj.hALshoot;
+    hALpath = obj.hALpath;
+    hALshootRed = obj.hALshootRed;
+    hALpathRed = obj.hALpathRed;
+    
+    zmin = obj.zmin;
+    zmax = obj.zmax;
+
+    freeVars = obj.freeVars; 
+    indFreeVars = obj.indFreeVars;
+    varStatus = obj.varStatus;
+    ivarFreeState = obj.ivarFreeState;
+    ivarFreeInput = obj.ivarFreeInput;
+    ivarFreeSlack = obj.ivarFreeSlack;
+    ivarFreeGroupShoot = obj.ivarFreeGroupShoot;
+    nfreeState = obj.nfreeState;
+    nfreeInput = obj.nfreeInput;
+    nfreeSlack = obj.nfreeSlack;
+    nfreeGroupShoot = obj.nfreeGroupShoot;
+
+    pr_reg_coef = obj.pr_reg_coef;
+   	activTol = obj.activTol;
+    bwd = obj.bwd;
+
+    cumCG = obj.cumCG;
+    pcgStatus = obj.pcgStatus;
+
+    a = obj.a;
+    betaSrch = obj.betaSrch;
+    cstSrch = obj.cstSrch;
+    maxItSrch = obj.maxItSrch;
+    maxRefIter = obj.maxRefIter;
+
+    vmod = obj.vmod;
+
+    wRed = new double[dZ];
+    std::copy(obj.wRed,obj.wRed+dZ,wRed);
+
+    rRed = new double[dZ];
+    std::copy(obj.rRed,obj.rRed+dZ,rRed);
+
+    yRed = new double[dZ]; 
+    std::copy(obj.yRed,obj.yRed+dZ,yRed);
+
+    pRed = new double[dZ];
+    std::copy(obj.pRed,obj.pRed+dZ,pRed);
+
+    xRed = new double[dZ]; 
+    std::copy(obj.xRed,obj.xRed+dZ,xRed);
+
+    zwork = new double[dZ];
+    std::copy(obj.zwork,obj.zwork+dZ,zwork);
+
+    prdHssWrk = new double[dZ];
+    std::copy(obj.prdHssWrk,obj.prdHssWrk+dZ,prdHssWrk);
+}
+
+/**
+* Assignment operator
+*/
+ProjectedRefiner& ProjectedRefiner::operator= (const ProjectedRefiner& obj){
+
+	double *wRed_,*rRed_,*yRed_,*pRed_,*xRed_;
+    double *zwork_,*prdHssWrk_;
+
+	if (this != &obj){
+
+		qmod = obj.qmod;
+        precon = obj.precon;
+    
+    	dZ = obj.dZ;
+    	dZBL = obj.dZBL;
+    	dZshoot = obj.dZshoot;
+   		dZshootBL = obj.dZshootBL;
+    	dZpath = obj.dZpath;
+    	dZpathBL = obj.dZpath;
+    
+        prdHss = obj.prdHss;
+
+    	dHshoot = obj.dHshoot;
+    	dHpath = obj.dHpath;
+        dhS = obj.dhS;
+        dhP = obj.dhP;
+    
+    	Ns_ = obj.Ns_;
+        Ns_BL = obj.Ns_BL;
+        NsBL = obj.NsBL;
+        Ns_NT = obj.Ns_NT;
+        NsNT = obj.NsNT;
+    
+    	dx = obj.dx;
+    	du = obj.du;
+    	dxu = obj.dxu;
+    	dxux = obj.dxux;
+    	dpc = obj.dpc;
+    
+    	dimRed = obj.dimRed;
+    	dimRedBL = obj.dimRed;
+        dimRedShoot = obj.dimRedShoot;
+        dimRedPath = obj.dimRedPath;
+
+        cumCG = obj.cumCG;
+        pcgStatus = obj.pcgStatus;
+
+    	z = obj.z;
+    	zminor = obj.zminor;
+
+    	gAL = obj.gAL;
+    
+    	hALshoot = obj.hALshoot;
+    	hALpath = obj.hALpath;
+        hALshootRed = obj.hALshootRed;
+        hALpathRed = obj.hALpathRed;
+    
+    	zmin = obj.zmin;
+    	zmax = obj.zmax;
+
+        freeVars = obj.freeVars;
+        indFreeVars = obj.indFreeVars;
+        varStatus = obj.varStatus;
+        ivarFreeState = obj.ivarFreeState;
+        ivarFreeInput = obj.ivarFreeInput;
+        ivarFreeSlack = obj.ivarFreeSlack;
+        ivarFreeGroupShoot = obj.ivarFreeGroupShoot;
+        nfreeState = obj.nfreeState;
+        nfreeInput = obj.nfreeInput;
+        nfreeSlack = obj.nfreeSlack;
+        nfreeGroupShoot = obj.nfreeGroupShoot;
+
+    	pr_reg_coef = obj.pr_reg_coef;
+   		activTol = obj.activTol;
+        bwd = obj.bwd;
+
+        a = obj.a;
+        betaSrch = obj.betaSrch;
+        cstSrch = obj.cstSrch;
+        maxItSrch = obj.maxItSrch;
+        maxRefIter = obj.maxRefIter;
+
+        vmod = obj.vmod;
+
+    	/* */
+    	if (wRed != NULL)
+    		delete [] wRed;
+    	if (obj.wRed != NULL){
+    		wRed_ = new double[dZ];
+    		std::copy(obj.wRed,obj.wRed+obj.dZ,wRed_);
+    		wRed = wRed_;
+    	}
+    	else {
+    		wRed = NULL;
+    	}
+
+    	/* */
+    	if (rRed != NULL)
+    		delete [] rRed;
+    	if (obj.rRed != NULL){
+    		rRed_ = new double[dZ];
+    		std::copy(obj.rRed,obj.rRed+obj.dZ,rRed_);
+    		rRed = rRed_;
+    	}
+    	else {
+    		rRed = NULL;
+    	}
+
+    	/* */
+    	if (yRed != NULL)
+    		delete [] yRed;
+    	if (obj.yRed != NULL){
+    		yRed_ = new double[dZ]; 
+    		std::copy(obj.yRed,obj.yRed+obj.dZ,yRed_);
+    		yRed = yRed_;
+    	}
+    	else {
+    		yRed = NULL;
+    	}
+
+    	/* */
+    	if (pRed != NULL)
+    		delete [] pRed;
+    	if (obj.pRed != NULL){
+    		pRed_ = new double[dZ];
+    		std::copy(obj.pRed,obj.pRed+obj.dZ,pRed_);
+    		pRed = pRed_;
+    	}
+    	else {
+    		pRed = NULL;
+    	}
+
+    	/* */
+    	if (xRed != NULL)
+    		delete [] xRed;
+    	if (obj.xRed != NULL){
+    		xRed_ = new double[dZ]; 
+    		std::copy(obj.xRed,obj.xRed+obj.dZ,xRed_);
+    		xRed = xRed_;
+   	 	} 	
+   	 	else {
+   	 		xRed = NULL;
+   	 	}	
+
+        /* */
+        if (zwork != NULL)
+            delete [] zwork;
+        if (obj.zwork != NULL){
+            zwork_ = new double[dZ];
+            std::copy(obj.zwork,obj.zwork+obj.dZ,zwork_);
+            zwork = zwork_;
+        }
+        else {
+            zwork = NULL;
+        }
+
+        /* */
+        if (prdHssWrk != NULL)
+            delete [] prdHssWrk;
+        if (obj.prdHssWrk != NULL){
+            prdHssWrk_ = new double[dZ];
+            std::copy(obj.prdHssWrk,obj.prdHssWrk+obj.dZ,prdHssWrk_);
+            prdHssWrk = prdHssWrk_;
+        }
+        else {
+            prdHssWrk = NULL;
+        }
+	}
+
+	return *this;
+}
+
+/**
+* Initialization method
+*/
+void ProjectedRefiner::init(){
+
+    assert(dZ>=1);
+
+    /* wRed */
+    if (wRed != NULL)
+        delete [] wRed;
+    wRed = new double[dZ]; 
+
+    /* rRed */
+    if (rRed != NULL)
+        delete [] rRed;
+    rRed = new double[dZ];
+
+    /* yRed */
+    if (yRed != NULL)
+        delete [] yRed;
+    yRed = new double[dZ];
+
+    /* pRed */
+    if (pRed != NULL)
+        delete [] pRed;
+    pRed = new double[dZ];
+
+    /* xRed */
+    if (xRed != NULL)
+        delete [] xRed;
+    xRed = new double[dZ];
+
+    /* zwork */
+    if (zwork != NULL)
+        delete [] zwork;
+    zwork = new double[dZ];
+
+    /* prdHssWrk */
+    if (prdHssWrk != NULL)
+        delete [] prdHssWrk;
+    prdHssWrk = new double[dZ];
+
+    /* Init. preconditioner */
+    precon.setReducedHessians(hALshootRed,hALpathRed);
+    precon.setDimFull(dZ);
+    precon.setNs_(Ns_);
+    precon.setShootDim(dZshoot,dxux,dhS,dHshoot,dGshoot);
+    precon.setSlackDim(dZpath,dpc,dhP,dHpath,dGpath);
+    precon.setDiagRegCoef(pr_reg_coef);
+    precon.setFreeVars(freeVars);
+    precon.setVarStatus(varStatus);
+    precon.setIndexFreeVars(ivarFreeState,ivarFreeInput,ivarFreeSlack,ivarFreeGroupShoot);
+    precon.setNumberFreeVars(nfreeState,nfreeInput,nfreeSlack,nfreeGroupShoot);
+    precon.init();
+}
+
+/** Assemble reduced hessian Z'BZ in a separated blockwise manner */
+void ProjectedRefiner::assembleReducedHessian(){
+
+    int i,j,n,nfree,irw;
+    int *nfgS,*ivfgS;
+    double *hS,*hSr;
+#if DPC
+    int *nfP,*ivfP;
+    double *hP,*hPr;
+#endif
+
+    hS = hALshoot;
+    hSr = hALshootRed;
+    ivfgS = ivarFreeGroupShoot;
+    nfgS = nfreeGroupShoot;
+#if DPC
+    hP = hALpath;
+    hPr = hALpathRed;
+    nfP = nfreeSlack;
+    ivfP = ivarFreeSlack;
+#endif
+    for (n=0;n<Ns_;++n){    
+        /* Shooting group */
+        nfree = *(nfgS+n);
+        for (i=0;i<nfree;++i){
+            irw = *(ivfgS+i)*dxux;
+            for (j=0;j<nfree;++j)
+                *hSr++ = *(hS+irw+*(ivfgS+j));
+        }
+        hS += dhS;
+        ivfgS += dxux;
+#if DPC    
+        /* Slack group */
+        nfree = *(nfP+n);
+        for (i=0;i<nfree;++i){
+            irw = *(ivfP+i)*dpc;
+            for (j=0;j<nfree;++j)
+                *hPr++ = *(hP+irw+*(ivfP+j));
+        }   
+        hP += dhP;
+        ivfP += nfree;
+#endif
+    }
+}
+
+/** 
+** - Update active set
+** - Compute residual Zm'*(gAL+B(z)*(zm-z)) 
+** - Compute 2-norm of projected gradient Zm'*gAL 
+**/
+void ProjectedRefiner::extractActiveSet(double* n2res,double* n2gra){
+
+    int nit,k,nx,nu,ngcur,ngpre,idx;
+    int nfr,iu;
+    int *ifv;
+    double al,au,az;
+    double n2r,n2g;
+    double auxr,auxg;
+    double *rr,*yr;
+    double *zmnr,*zm,*zM;
+#if DPC
+    int ns;
+    int *ivfP;
+    double *zmnrP,*zmP,*zMP;
+#endif
+
+    memset(nfreeState,0,NsNT);
+    memset(nfreeInput,0,Ns_NT);
+    memset(nfreeGroupShoot,0,Ns_NT);
+#if DPC
+    memset(nfreeSlack,0,Ns_NT);
+#endif
+    dimRedShoot = 0;
+    n2g = 0.;
+    n2r = 0.;
+    rr = rRed;
+    ifv = indFreeVars; 
+    zmnr = zminor;
+    zm = zmin;
+    zM = zmax;
+    for (k=0;k<dZshoot;++k){
+        al = *zm++;
+        au = *zM++;
+        az = *zmnr++;
+        /* Variable is at upper bound */
+        if (ABS(au-az)<activTol){
+            *(freeVars+k) = 0;
+            *(varStatus+k) = 1;
+            continue;
+        }
+        /* Variable is at lower bound */
+        if (ABS(az-al)<activTol){
+            *(freeVars+k) = 0;
+            *(varStatus+k) = -1;
+            continue;
+        }
+        /* Variable is free */
+        ++dimRedShoot;
+        *(freeVars+k) = 1;
+        *(varStatus+k) = 0;
+        *ifv++ = k;
+        /* Compute 2-norm of reduced gradient and residual */
+        auxg = *(gAL+k);
+        n2g += auxg*auxg;   
+        auxr = auxg+*(prdHss+k);
+        n2r += auxr*auxr;
+        /* Update reduced residual */
+        *rr++ = -auxr;
+        /* 
+        * Map free variable to state, input & group 
+        */
+        /* State number */
+        nx = k/dxu; 
+        /* Input number */
+        nu = nx;
+        /* Current group number */
+        ngcur = nx;
+        /* Previous group number */
+        ngpre = nx-1;
+        /* Compute index in current state or input */
+        idx = k%dxu;
+        switch (idx/dx){
+            case 0:
+                /* Index corresponds to state variable */
+                nfreeState[nx]++;
+                if (ngpre>=0){
+                    nfr = nfreeGroupShoot[ngpre];
+                    *(ivarFreeGroupShoot+ngpre*dxux+nfr) = dxu+idx;
+                    nfreeGroupShoot[ngpre]++;
+                }
+                if (ngcur<=Ns_-1){
+                    nfr = nfreeGroupShoot[ngcur];
+                    *(ivarFreeGroupShoot+ngcur*dxux+nfr) = idx;
+                    nfreeGroupShoot[ngcur]++;
+                }
+                break;
+            case 1:
+                /* Index corresponds to input variable */
+                iu = idx%dx;
+                nfreeInput[nu]++;
+                nfr = nfreeGroupShoot[ngcur];
+                *(ivarFreeGroupShoot+ngcur*dxux+nfr) = dx+iu;
+                nfreeGroupShoot[ngcur]++;
+                break;
+            default:
+//              std::cerr<<"ERROR<ActivityDetector>: problem in extracting active-set from shooting block, idx/dx= "<<idx/dx<<", idx= "<<idx<<", dx= "<<dx<<std::endl;
+                return;
+        }
+    }
+    dimRedPath = 0;
+#if DPC
+    ivfP = ivarFreeSlack;
+    zmnrP = zminor+dZshoot;
+    zmP = zmin+dZshoot;
+    zMp = zmax+dZshoot;
+    for (k=dZshoot;k<dZ;++k){
+        ax = *zmnrP++;
+        al = *zmP++;
+        au = *zMp++;
+        /* Lower bound active */
+        if (ABS(ax-al)<activTol){
+            *(varStatus+k) = -1;
+            *(freeVars+k) = 0;
+            continue;
+        }
+        /* Upper bound active */
+        if (ABS(ax-au)<activTol){
+            *(varStatus+k) = 1;
+            *(freeVars+k) = 0;
+            continue;
+        }
+        /* Variable is free */
+        *(varStatus+k) = 0;
+        *(freeVars+k) = 1;
+        *ifv++ = k;
+        ++dimRedPath;
+        /* Compute 2-norm of reduced gradient and residual */
+        auxg = *(grad+k);
+        n2g += auxg*auxg;
+        auxr = auxg+*(prdHss+k);
+        n2r += auxr*auxr;
+        /* Update reduced residual */
+        *rr++ = -auxr;
+        /* Map variable to slack group */
+        /* Slack number */
+        ns = (k-dZshoot)/dpc;
+        /* Compute index in current slack */
+        nfreeSlack[ns]++;
+        *ivfP++ = (k-dZshoot)%dpc;
+    }
+#endif
+    /* Update reduced residual & gradient */
+    *n2res = n2r;
+    *n2gra = n2g;
+    /* Update free subspace dimension */
+    dimRed = dimRedShoot+dimRedPath;
+    dimRedBL = dimRed*SZDBL;
+}
+
+/**
+** Compute candidate point by means of Moré-Toraldo projected searches along directions
+** generated by PCG iterations => sequence of minor iterates with decrease of the quadratic model
+** Inputs: - n2rC, squared 2-norm of residual at Cauchy point Zc'*(gAL+B(z)*(zC-z))
+           - n2gC, squared 2-norm of reduced gradient Zc'*gAL 
+           - rtol, relative tolerance for convergence of Moré-Toraldo projections 
+                    ||Zm'*(gAL+B(z)*(zm-z))||<=rtol*||Zm'*gAL||
+           - trustRadius, trust region radius at current main iteration
+**/
+void ProjectedRefiner::findCandidate(const double rtol,const double trustRadius){
+
+    int nit,k,nx,nu,ngcur,ngpre,idx;
+    int nfr,iu;
+    int *ifv;
+    double al,au,az;
+    double n2r,n2g;
+    double tol2;
+    double *rr,*yr;
+
+    /* CG iter counter */
+#if COUNT_CG
+    cumCG = 0;
+#endif
+    /**
+    ** Refinement loop (PCG & projected searches)
+    **/
+#if PRINT_MOR_TOR
+    std::cout<<"Start refinement loop..."<<std::endl;
+#endif
+    for (nit=0;nit<maxRefIter;++nit){
+#if PRINT_MOR_TOR
+       std::cout<<"Refinement iteration "<<nit<<std::endl;
+       std::cout<<"Model value: "<<vmod<<std::endl;
+#endif
+        /* Extract active-set at current minor iterate and compute residuals & gradients */
+        extractActiveSet(&n2r,&n2g);
+        tol2 = rtol*n2g;
+
+        /* Stop if relative tolerance reached */
+        if (n2r<=tol2){
+#if PRINT_MOR_TOR
+            std::cout<<"Rel. tolerance reached in refinement:"<<std::endl;
+            std::cout<<"n2r="<<n2r<<", n2g="<<n2g<<std::endl;
+            std::cout<<"ProjectedRefiner stopped with model value "<<vmod<<std::endl;
+#endif
+            return;
+        }
+        /* Assemble reduced hessian */
+        assembleReducedHessian();
+
+        /** Build preconditioner and apply it to reduced residual by solving M.yRed = rRed */
+        precon.setDimRed(dimRed,dimRedShoot,dimRedPath);
+#if NO_PRE
+        /* No preconditioner */
+        rr = rRed;
+        yr = yRed;
+        while (rr != rRed+dimRed)
+            *yr++ = *rr++;
+#endif
+#if JACO_PRE 
+        /* Jacobi preconditioner */
+        precon.buildJacobi();
+        precon.applyJacobi(yRed,rRed);
+#endif
+#if BAND_PRE
+        /* Banded preconditioner */
+        precon.buildBand();
+        precon.applyBand(yRed,rRed);
+#endif
+        /** - Compute descent direction via safeguarded PCG on current active face
+           - Stop if negative curvature, out of trust region or tolerance reached */  
+#if PRINT_MOR_TOR
+        std::cout<<"Start generating descent direction..."<<std::endl;
+#endif
+        genDesDir(trustRadius,tol2);        
+#if PRINT_MOR_TOR
+        std::cout<<"...descent direction generated."<<std::endl;
+#endif         
+        /** Projected search on descent direction to activate new constraints */
+#if PRINT_MOR_TOR
+        std::cout<<"Start projected search..."<<std::endl;
+#endif
+        projSearch();
+#if PRINT_MOR_TOR
+        std::cout<<"...done projected search."<<std::endl;
+#endif
+        /* Abort if CG iterate outside trust region or negative curvature encountered */
+        if (pcgStatus==-1){
+#if PRINT_MOR_TOR
+            std::cout<<"REFINEMENT: NEG_CURV OR OUT-TR"<<std::endl;
+            std::cout<<"ProjectedRefiner stopped with model value: "<<vmod<<std::endl;
+#endif
+            return;
+        }    
+    }
+}
+
+/**
+** Generate descent direction via safeguarded PCG on free subspace at current minor iterate
+**/
+void ProjectedRefiner::genDesDir(const double trustRadius,const double tol2){
+
+    int ncg,n,i,j,nfrg,nfrx,nfru;
+    int *nfgS,*nfX,*nfU;
+    double auxr,auxy,aux,a1,a2,curv;
+    double rh1,rh2,n2res,beta,px;
+    double *rr,*yr,*pr,*wr,*xr;
+    double *hsr,*prS,*pprS,*xrS,*xxrS;
+#if DPC
+    double *hpr;
+    int *nfP;
+#endif
+
+    /**
+    * - Compute 2-norm of residual and scaled residual rh2
+    * - Initialize descent direction to 0
+    * - Initialize CG direction to 0
+    **/
+    rh1 = 1.;
+    rh2 = 0.;
+    n2res = 0.;
+    rr = rRed;
+    yr = yRed;
+    pr = pRed;
+    wr = wRed;
+    while (rr != rRed+dimRed){
+        auxr = *rr++;
+        rh2 += *yr++*auxr;
+        n2res += auxr*auxr;
+        *pr++ = 0.;
+        *wr++ = 0.;
+    }
+
+//    std::cout<<"<<<Generate descent direction>>> Model value from Cauchy phase: "<<vmod<<std::endl;
+//    checkPCGiter(wRed);
+
+    /**
+    ** Safeguarded PCG main loop
+    **/
+    ncg = 0;
+    while (1){
+        /* Check tolerance and # iterations, stop if satisfied */
+        if ((n2res<=tol2)||(ncg>=dimRed)){
+            pcgStatus = 2;
+#if PRINT_CG            
+            std::cout<<"SUBSPACE-REFINER: tolerance or max. num. iters hit."<<std::endl;
+            std::cout<<"n2res="<<n2res<<", tol2="<<tol2<<std::endl;
+            std::cout<<"ncg="<<ncg<<", dimRed="<<dimRed<<std::endl;
+#endif
+            break;
+        }
+        /* CG step-size computation */
+        beta = rh2/rh1; 
+        /* Conjugate direction update pr <- yr + beta*pr */
+        pr = pRed;
+        yr = yRed;
+        while (pr != pRed+dimRed){
+            aux = *pr;
+            *pr++ = beta*aux+*yr++;
+        }
+        /**
+        ** Product with reduced AL hessian xRed <- Hred*pRed
+        **/
+        memset(xRed,0,dimRedBL);
+        hsr = hALshootRed;
+        nfgS = nfreeGroupShoot;
+        nfX = nfreeState;
+        nfU = nfreeInput;
+        prS = pRed;
+        xrS = xRed;
+#if DPC
+        hpr = hALpathRed;
+        nfP = nfreeSlack;
+        prP = pRed+dimRedShoot;
+        xrP = xRed+dimRedShoot;
+#endif
+        /* Loop over shooting groups */
+        for (n=0;n<Ns_;++n){
+            nfrg = *nfgS++; // # free vars in group n
+            nfrx = *nfX++;  // # free state vars
+            nfru = *nfU++;  // # free input vars
+            /* Product with reduced shooting block xrS <- hsr*prS+xrS */
+#if MANU
+            xxrS = xrS;
+            for (i=0;i<nfrg;++i){
+                aux = 0.;
+                pprS = prS;
+                for (j=0;j<nfrg;++j)
+                    aux += *hsr++**pprS++;
+                *xxrS++ += aux; 
+            }
+#endif
+#if BLAS
+            cblas_dgemv(CblasRowMajor,CblasNoTrans,
+                        nfrg,nfrg,1.,hsr,nfrg,prS,1,1.,xrS,1);
+            hsr += nfrg*nfrg;
+#endif
+            xrS += nfrx+nfru;
+            prS += nfrx+nfru;
+#if DPC
+            nfrp = *nfP++;
+            /* Product with reduced slack block xrP <- hpr*prP */
+#if MANU
+            for (i=0;i<nfrp;++i){
+                aux = 0.;
+                pprP = prP;
+                for (j=0;j<nfrp;++j)
+                    aux += *hpr++**pprP++;
+                *xrP++ = aux;
+            } 
+#endif  
+#if BLAS
+            cblas_dgemv(CblasRowMajor,CblasNoTrans,
+                        nfrp,nfrp,1.,hpr,nfrp,prP,1,0.,xrP,1);
+            hpr += nfrp*nfrp;
+            xrP += nfrp;
+#endif
+            prP += nfrp;
+#endif
+        }
+        /**  1) Compute curvature
+             2) Find largest step-size alpha sth ||w+alpha*p||=Delta */
+        a1 = POSINF;
+        curv = 0.;
+        pr = pRed;
+        wr = wRed;
+        xr = xRed;
+        while (xr != xRed+dimRed){
+            px = *pr;
+//            std::cout<<"px="<<px<<std::endl;
+//            std::cout<<"*xr="<<*xr<<std::endl; 
+            curv += *xr*px;
+            if (px>POSZER){
+                a1 = MIN((trustRadius-*wr)/px,a1);
+                ++xr;
+                ++pr;
+                ++wr;
+                continue;
+            }
+            if (px<NEGZER){
+                a1 = MIN((-trustRadius-*wr)/px,a1);
+                ++xr;
+                ++pr;
+                ++wr;
+                continue;
+            }
+            ++xr;
+            ++pr;
+            ++wr;
+        }
+        a2 = rh2/curv;
+        /**
+        * If nonpositive curvature encountered or w goes out of trust region, update and stop.
+        **/
+//        std::cout<<"CURV="<<curv<<std::endl;
+        if ((curv<=POSZER)||(a2>a1)){
+            wr = wRed;
+            pr = pRed;
+            while (wr != wRed+dimRed){
+                *wr++ += a1**pr++;
+            }
+//            std::cout<<"<<<ProjectedRefiner>>>, safeguarding:"<<std::endl;
+//            std::cout<<"curv="<<curv<<std::endl;
+//            std::cout<<"a2="<<a2<<", a1="<<a1<<std::endl;
+//            checkPCGiter(wRed);
+            pcgStatus = -1;
+            return;
+        }
+        /** 
+        * PCG update 
+        */
+        wr = wRed;
+        pr = pRed;
+        xr = xRed;
+        rr = rRed;
+        while (wr != wRed+dimRed){
+            *wr += *pr*a2;
+            *rr -= *xr*a2;
+            ++wr;
+            ++xr;
+            ++pr;
+            ++rr;
+        }
+//        checkPCGiter(wRed);
+        /* Apply preconditioner, ie solve M.yRed = rRed */
+#if NO_PRE
+        rr = rRed;
+        yr = yRed;
+        while (rr != rRed+dimRed)
+            *yr++ = *rr++;
+#endif
+#if JACO_PRE
+        precon.applyJacobi(yRed,rRed);
+#endif
+#if BAND_PRE        
+        precon.applyBand(yRed,rRed);
+#endif
+        /* Update residuals */
+        rh1 = rh2;
+        rr = rRed;
+        yr = yRed;
+        rh2 = 0.;
+        n2res = 0.;
+        /* This loop could be done inside the applyJacobi() or applyBand() methods !!! */
+        while (rr != rRed+dimRed){
+            auxr = *rr++;
+            auxy = *yr++;
+            rh2 += auxy*auxr;
+            n2res += auxr*auxr;
+        }
+        /* Go to next PCG iteration */
+        ++ncg;
+    }
+#if COUNT_CG
+    cumCG += ncg+1;
+#endif
+}
+
+/**
+** Projected search along descent direction wRed
+**/
+void ProjectedRefiner::projSearch(){
+
+    int nit,ii;
+    int *ifv,*vs;
+    double rhs,lhs;
+    double amin;
+    double ww,aux;
+    double zzwrk,zzmnr;
+    double *wr,*gg,*pp;
+    double *zwrk,*zmnr;
+    double *zl,*zu;
+
+//    checkPCGiter(wRed);
+//    std::cout<<"Model value before proj search="<<vmod<<std::endl;
+
+    /* Compute max & min break point along line P(z+a*w) */
+    amin = POSINF;
+//    amax = NEGINF;
+    wr = wRed; 
+    ifv = indFreeVars;   
+    while (wr != wRed+dimRed){
+        ww = *wr++;
+        ii = *ifv++;
+        if (ww<0){
+//            amax = MAX(amax,(*(zmin+ii)-*(zminor+ii))/ww);
+            amin = MIN(amin,(*(zmin+ii)-*(zminor+ii))/ww);
+            continue;
+        }
+        if (ww>0){
+//            amax = MAX(amax,(*(zmax+ii)-*(zminor+ii))/ww);
+            amin = MIN(amin,(*(zmax+ii)-*(zminor+ii))/ww);
+            continue;  
+        }
+    }
+    /* Backtracking loop to get sufficient decrease along descent direction */
+    nit = 0;
+    a = 1.;
+    while (1){
+//        std::cout<<"PROJ SEARCH, BCK "<<nit<<std::endl;
+        /* Compute P(zminor+a*wRed) and rhs of sufficient decrease condition */
+        rhs = 0.;
+        wr = wRed;
+        zwrk = zwork;
+        zmnr = zminor;
+        zl = zmin;
+        zu = zmax;
+        vs = varStatus;
+        gg = gAL;
+        pp = prdHss;
+        while (zwrk != zwork+dZ){
+            if (*vs==0){
+                zzmnr = *zmnr++;
+                zzwrk = PROJ(zzmnr+a**wr,*zl,*zu);
+                rhs += (*gg+*pp)*(zzwrk-zzmnr);
+                *zwrk++ = zzwrk;
+                ++wr;
+                ++gg;
+                ++pp;
+                ++zl;
+                ++zu;
+                ++vs;
+                continue;
+            }
+            *zwrk++ = *zmnr++;
+            ++zl;
+            ++zu;
+            ++vs;
+            ++gg;
+            ++pp;
+        }
+        rhs *= cstSrch;
+        rhs += vmod;
+        /* Evaluate model at next minor iterate (could avoid the cost of g'*(zminor-z) by doing smartly) 
+            CAUTION: prdHssWrk is also updated to B(z)*(zm-z) */
+        lhs = qmod.evalModel(zwork,prdHssWrk);
+//        std::cout<<"a="<<a<<", lhs="<<lhs<<", rhs="<<rhs<<std::endl;
+        /* Stop if sufficient decrease */
+        if ((lhs<rhs)||(nit>=maxItSrch-1)) 
+            break;
+        /* Shrink step-size and goto next backtracking iteration */
+        a *= betaSrch;
+        ++nit;
+    }
+//    if (nit==maxItSrch-1)
+//        checkPCGiter(wRed);
+
+    /***
+    * Force at least one constraint to become active 
+    * if step-size smaller than minimum break point amin and amin<=1
+    */
+    /* If step-size a is smaller than minimum breakpoint amin and amin<=1, set a=amin */
+    if ((amin<=1.)&&(a<amin)){
+//        std::cout<<"FORCE IT"<<std::endl;
+//        std::cout<<"amin="<<amin<<", a="<<a<<std::endl;
+        a = amin;
+        /* Update zminor */
+        wr = wRed;
+        ifv = indFreeVars;
+        while (wr != wRed+dimRed){
+            ii = *ifv++;
+            *(zminor+ii) += a**wr++;
+        }
+        /* Update vmod (prdHss updated to B(z)*(zm-z)) */
+        vmod = qmod.evalModel(zminor,prdHss);
+    }
+    else {
+        /* Update zminor */
+        memcpy(zminor,zwork,dZBL);
+        memcpy(prdHss,prdHssWrk,dZBL);
+        vmod = lhs;
+    }
+//    std::cout<<"Model value after proj search="<<vmod<<std::endl;
+//    if (a<0.1)
+//        std::cout<<"a="<<a<<std::endl;
+}
+
+/**
+* For debugging, compute model q(z+w) at current PCG iterate w
+*/
+void ProjectedRefiner::checkPCGiter(double* wcg){
+
+    int ii,nit;
+    double aa;
+    double *wr;
+    int *ifv;
+
+    std::cout<<"Check decrease along segment x+a*w, a in [0,1]:"<<std::endl;
+    aa = 1.;
+    nit = 0;
+    while (nit<=maxItSrch-1){
+        std::copy(zminor,zminor+dZ,zwork);
+        wr = wcg;
+        ifv = indFreeVars;
+        while (wr != wcg+dimRed){
+            ii = *ifv++;
+//            *(zwork+ii) += aa**wr++;
+            *(zwork+ii) = PROJ(*(zwork+ii)+aa**wr,*(zmin+ii),*(zmax+ii));
+            ++wr;
+        }
+        std::cout<<"Model value for coef "<<aa<<"= "<<qmod.evalModel(zwork,prdHssWrk)<<std::endl;
+        aa *= betaSrch;
+        ++nit;
+    }
+}
